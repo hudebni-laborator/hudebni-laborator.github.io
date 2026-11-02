@@ -1469,15 +1469,66 @@ class GuitarTrainer {
     let currentLabStroke = null;
     let currentLabTargetPage = null;
 
-    // Proměnné pro dlouhý stisk a 2D lícování
+    // Proměnné pro bleskové 2D lícování tažením (Hardware-accelerated)
     let longPressTimer = null;
     let isNudging = false;
     let nudgeStartX = 0;
     let nudgeStartY = 0;
     let nudgeStartOffsetX = 0;
     let nudgeStartOffsetY = 0;
+    let nudgeRafId = null;
+    let lastRenderedNudgeX = null;
+    let lastRenderedNudgeY = null;
     let tapStartTime = 0;
     let tapStartPos = null;
+
+    // Blesková funkce (< 0.3 ms) – překresluje pouze hotové bitmapy z mezipaměti
+    const fastNudgeRender = () => {
+      nudgeRafId = null;
+      if (!isNudging || !this.labCtx || !this._nudgeM1Cache || !this._nudgeM2Cache) return;
+
+      const measures = this.currentScore?.measures || [];
+      const nextM = measures[this.labCurrentIndex + 1];
+      if (!nextM) return;
+
+      const curX = nextM.manualOffsetX || 0;
+      const curY = nextM.manualOffsetY || 0;
+      if (curX === lastRenderedNudgeX && curY === lastRenderedNudgeY) return;
+      lastRenderedNudgeX = curX;
+      lastRenderedNudgeY = curY;
+
+      const meta = this.labLayoutMeta;
+      if (!meta) return;
+
+      const ratio = meta.ratio || 1.0;
+      const diff = (this._nudgeStaffCenter1 - this._nudgeStaffCenter2) + curY;
+      const originY1 = Math.round((diff < 0 ? -diff : 0) * ratio);
+      const originY2 = Math.round((diff > 0 ? diff : 0) * ratio);
+      const originX2 = Math.max(10, Math.round((meta.m1.box.width + curX) * ratio));
+
+      const totalW = originX2 + Math.round(nextM.box.width * ratio);
+      const totalH = Math.max(originY1 + this._nudgeM1Cache.height, originY2 + this._nudgeM2Cache.height);
+
+      if (this.labCanvas.width !== totalW || this.labCanvas.height !== totalH) {
+        this.labCanvas.width = totalW;
+        this.labCanvas.height = totalH;
+      }
+
+      this.labCtx.fillStyle = this._nudgePaperColor || '#f4f2ec';
+      this.labCtx.fillRect(0, 0, totalW, totalH);
+
+      // Přímé vykreslení hotových výřezů bez přepočtu linek a PDF
+      this.labCtx.drawImage(this._nudgeM1Cache, 0, originY1);
+      this.labCtx.drawImage(this._nudgeM2Cache, originX2, originY2);
+
+      // Aktualizace plovoucího odznaku
+      const badgeVal = document.getElementById('labNudgeBadgeVal');
+      if (badgeVal) {
+        const xStr = curX >= 0 ? `+${curX}` : `${curX}`;
+        const yStr = curY >= 0 ? `+${curY}` : `${curY}`;
+        badgeVal.innerText = `X: ${xStr} px | Y: ${yStr} px`;
+      }
+    };
 
     lens.addEventListener('touchstart', e => {
       if (e.touches.length > 1) e.preventDefault();
@@ -1523,18 +1574,66 @@ class GuitarTrainer {
           return;
         }
 
-        // Dlouhý stisk pro 2D lícování v landscape
+        // Dlouhý stisk pro aktivaci posunu v landscape
         const isLandscape = window.innerWidth > window.innerHeight;
         const measures = this.currentScore?.measures || [];
         if (isLandscape && this.labCurrentIndex + 1 < measures.length) {
-          longPressTimer = setTimeout(() => {
+          longPressTimer = setTimeout(async () => {
             isNudging = true;
             isLabPanning = false;
             nudgeStartX = e.clientX;
             nudgeStartY = e.clientY;
             const nextM = measures[this.labCurrentIndex + 1];
+            const curM = measures[this.labCurrentIndex];
             nudgeStartOffsetX = nextM.manualOffsetX || 0;
             nudgeStartOffsetY = nextM.manualOffsetY || 0;
+            lastRenderedNudgeX = null;
+            lastRenderedNudgeY = null;
+
+            // PŘÍPRAVA MEZIPAMĚTI (proběhne jen 1× při začátku stisku, ne při pohybu)
+            const curImg = await this.getPageImage(curM.page || 1);
+            const nextImg = await this.getPageImage(nextM.page || 1);
+            this._nudgeStaffCenter1 = getStaffCenterYInBox(curImg, curM.box);
+            this._nudgeStaffCenter2 = getStaffCenterYInBox(nextImg, nextM.box);
+            this._nudgePaperColor = this.samplePaperColorFromImage(curImg, curM.box);
+
+            const ratio = this.labLayoutMeta?.ratio || 1.0;
+            const dpr = Math.max(1, window.devicePixelRatio || 1);
+            const targetScale = ratio * 2.0;
+
+            if (this.currentScore?.isPdf && this.pdfDoc) {
+              const off1 = document.createElement('canvas');
+              off1.width = Math.round(curM.box.width * ratio);
+              off1.height = Math.round(curM.box.height * ratio);
+              const p1 = await this.pdfDoc.getPage(curM.page || 1);
+              await p1.render({
+                canvasContext: off1.getContext('2d'),
+                viewport: p1.getViewport({ scale: targetScale }),
+                transform: [1, 0, 0, 1, -Math.round(curM.box.left * ratio), -Math.round(curM.box.top * ratio)]
+              }).promise;
+              this._nudgeM1Cache = off1;
+
+              const off2 = document.createElement('canvas');
+              off2.width = Math.round(nextM.box.width * ratio);
+              off2.height = Math.round(nextM.box.height * ratio);
+              const p2 = await this.pdfDoc.getPage(nextM.page || 1);
+              await p2.render({
+                canvasContext: off2.getContext('2d'),
+                viewport: p2.getViewport({ scale: targetScale }),
+                transform: [1, 0, 0, 1, -Math.round(nextM.box.left * ratio), -Math.round(nextM.box.top * ratio)]
+              }).promise;
+              this._nudgeM2Cache = off2;
+            } else {
+              const off1 = document.createElement('canvas');
+              off1.width = curM.box.width; off1.height = curM.box.height;
+              off1.getContext('2d').drawImage(curImg, curM.box.left, curM.box.top, curM.box.width, curM.box.height, 0, 0, curM.box.width, curM.box.height);
+              this._nudgeM1Cache = off1;
+
+              const off2 = document.createElement('canvas');
+              off2.width = nextM.box.width; off2.height = nextM.box.height;
+              off2.getContext('2d').drawImage(nextImg, nextM.box.left, nextM.box.top, nextM.box.width, nextM.box.height, 0, 0, nextM.box.width, nextM.box.height);
+              this._nudgeM2Cache = off2;
+            }
 
             if (navigator.vibrate) navigator.vibrate(40);
 
@@ -1572,7 +1671,7 @@ class GuitarTrainer {
         longPressTimer = null;
       }
 
-      // 1. Zpomalený 2D posun (lícování) s faktorem 2.5 pro maximální jemnost
+      // 1. Plynulý 2D posun bez zpoždění řízený obnovovací frekvencí displeje
       if (isNudging) {
         const sensitivity = 10.0;
         const deltaX = Math.round((e.clientX - nudgeStartX) / ((this.labZoomScale || 1.0) * sensitivity));
@@ -1582,13 +1681,10 @@ class GuitarTrainer {
         if (nextM) {
           nextM.manualOffsetX = nudgeStartOffsetX + deltaX;
           nextM.manualOffsetY = nudgeStartOffsetY - deltaY;
-          this.showMeasureInLab(this.labCurrentIndex, false);
 
-          const badgeVal = document.getElementById('labNudgeBadgeVal');
-          if (badgeVal) {
-            const xStr = nextM.manualOffsetX >= 0 ? `+${nextM.manualOffsetX}` : `${nextM.manualOffsetX}`;
-            const yStr = nextM.manualOffsetY >= 0 ? `+${nextM.manualOffsetY}` : `${nextM.manualOffsetY}`;
-            badgeVal.innerText = `X: ${xStr} px | Y: ${yStr} px`;
+          // Naplánuje překreslení v mezipaměti přesně na další snímek (60/120 Hz)
+          if (!nudgeRafId) {
+            nudgeRafId = requestAnimationFrame(fastNudgeRender);
           }
         }
         return;
@@ -1680,11 +1776,18 @@ class GuitarTrainer {
 
       this.hideToolCursor();
 
+      // Po zvednutí prstu: zrušíme animaci, vyčistíme mezipaměť a provedeme finální uložení
       if (isNudging) {
         isNudging = false;
+        if (nudgeRafId) { cancelAnimationFrame(nudgeRafId); nudgeRafId = null; }
         const badge = document.getElementById('labNudgeBadge');
         if (badge) badge.style.display = 'none';
+
+        this._nudgeM1Cache = null;
+        this._nudgeM2Cache = null;
         await this.persistCurrentScore();
+        this.showMeasureInLab(this.labCurrentIndex, false);
+
         ongoingTouches.clear();
         tapStartPos = null;
         return;
