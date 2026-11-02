@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hudebni-laborator-v94';
+const CACHE_NAME = 'hudebni-laborator-v95';
 const ASSETS = [
   './',
   './index.html',

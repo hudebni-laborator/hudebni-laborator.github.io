@@ -141,7 +141,7 @@ class GuitarTrainer {
     this.editTool = 'box';
     this.labTool = 'pan'; // 'pan' | 'pen' | 'whiteout' | 'eraser'
     this.paperColor = '#f4f2ec';
-    this.penColor = '#ef4444';
+    this.penColor = '#18181b'; // Výchozí je černá
     this.penWidth = 2;
     this.showAnnotations = true;
     this.isDrawingStroke = false;
@@ -376,18 +376,69 @@ class GuitarTrainer {
   setPenColor(color) {
     this.penColor = color;
     document.querySelectorAll('.color-btn').forEach(btn => btn.classList.remove('active'));
-    if (color === '#ef4444') {
-      document.querySelector('.color-red')?.classList.add('active');
-      document.getElementById('labColorRed')?.classList.add('active');
+    if (color === '#18181b' || color === '#000000') {
+      document.querySelectorAll('.color-black').forEach(btn => btn.classList.add('active'));
+    } else if (color === '#ef4444') {
+      document.querySelectorAll('.color-red').forEach(btn => btn.classList.add('active'));
+    } else if (color === '#10b981') {
+      document.querySelectorAll('.color-green').forEach(btn => btn.classList.add('active'));
+    } else if (color === '#3b82f6') {
+      document.querySelectorAll('.color-blue').forEach(btn => btn.classList.add('active'));
     }
-    if (color === '#10b981') {
-      document.querySelector('.color-green')?.classList.add('active');
-      document.getElementById('labColorGreen')?.classList.add('active');
+  }
+
+  /**
+   * Vykreslí tah s kvadratickým Bézierovým vyhlazováním přes středy bodů.
+   * Eliminuje lomené rohy a vytváří plynulé křivky pro crescenda a obloučky.
+   */
+  drawSmoothStroke(ctx, stroke, scale = 1.0, ox = 0, oy = 0, originBox = null) {
+    const pts = stroke.points;
+    if (!pts || pts.length === 0) return;
+
+    const oLeft = originBox ? originBox.left : 0;
+    const oTop = originBox ? originBox.top : 0;
+
+    const toX = (p) => ox + (p.x - oLeft) * scale;
+    const toY = (p) => oy + (p.y - oTop) * scale;
+
+    ctx.save();
+    ctx.strokeStyle = stroke.color || '#18181b';
+    ctx.lineWidth = (stroke.width || 2) * scale;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (pts.length === 1) {
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.arc(toX(pts[0]), toY(pts[0]), ctx.lineWidth / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      return;
     }
-    if (color === '#3b82f6') {
-      document.querySelector('.color-blue')?.classList.add('active');
-      document.getElementById('labColorBlue')?.classList.add('active');
+
+    if (pts.length === 2) {
+      ctx.beginPath();
+      ctx.moveTo(toX(pts[0]), toY(pts[0]));
+      ctx.lineTo(toX(pts[1]), toY(pts[1]));
+      ctx.stroke();
+      ctx.restore();
+      return;
     }
+
+    // Plynulé Bézierovy křivky přes středy sousedních bodů
+    ctx.beginPath();
+    ctx.moveTo(toX(pts[0]), toY(pts[0]));
+
+    for (let i = 1; i < pts.length - 1; i++) {
+      const midX = (toX(pts[i]) + toX(pts[i + 1])) / 2;
+      const midY = (toY(pts[i]) + toY(pts[i + 1])) / 2;
+      ctx.quadraticCurveTo(toX(pts[i]), toY(pts[i]), midX, midY);
+    }
+
+    const last = pts[pts.length - 1];
+    ctx.lineTo(toX(last), toY(last));
+    ctx.stroke();
+    ctx.restore();
   }
 
   setPenWidth(width, btnIdx) {
@@ -822,21 +873,9 @@ class GuitarTrainer {
 
     if (this.showAnnotations && this.currentScore?.drawings) {
       const strokes = this.currentScore.drawings[`page_${this.currentPage}`] || [];
-      this.scoreCtx.save();
-      this.scoreCtx.lineCap = 'round';
-      this.scoreCtx.lineJoin = 'round';
       strokes.forEach(stroke => {
-        if (!stroke.points || stroke.points.length < 2) return;
-        this.scoreCtx.strokeStyle = stroke.color || '#ef4444';
-        this.scoreCtx.lineWidth = stroke.width || 2;
-        this.scoreCtx.beginPath();
-        this.scoreCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for (let i = 1; i < stroke.points.length; i++) {
-          this.scoreCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
-        }
-        this.scoreCtx.stroke();
+        this.drawSmoothStroke(this.scoreCtx, stroke, 1.0, 0, 0, null);
       });
-      this.scoreCtx.restore();
     }
 
     if (!this.isMarkingMode) return;
@@ -1131,22 +1170,16 @@ class GuitarTrainer {
 
       if (this.isDrawingStroke && this.currentStroke) {
         const c = this.screenToCanvasCoords(e.clientX, e.clientY);
-        this.currentStroke.points.push({ x: c.x, y: c.y });
-        this.updateToolCursor(e.clientX, e.clientY, 'edit');
-        if (this.scoreCtx) {
-          this.scoreCtx.save();
-          this.scoreCtx.strokeStyle = this.currentStroke.color;
-          this.scoreCtx.lineWidth = this.currentStroke.width;
-          this.scoreCtx.lineCap = 'round';
-          this.scoreCtx.lineJoin = 'round';
-          const pts = this.currentStroke.points;
-          if (pts.length >= 2) {
-            this.scoreCtx.beginPath();
-            this.scoreCtx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
-            this.scoreCtx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-            this.scoreCtx.stroke();
+        const pts = this.currentStroke.points;
+        const lastPt = pts[pts.length - 1];
+        
+        // Zabrání shlukování bodů při pomalém tahu prstem (odstraní kostrbatost)
+        if (Math.hypot(c.x - lastPt.x, c.y - lastPt.y) >= 2.0) {
+          pts.push({ x: c.x, y: c.y });
+          this.updateToolCursor(e.clientX, e.clientY, 'edit');
+          if (this.scoreCtx) {
+            this.drawSmoothStroke(this.scoreCtx, this.currentStroke, 1.0, 0, 0, null);
           }
-          this.scoreCtx.restore();
         }
         return;
       }
@@ -1731,38 +1764,22 @@ class GuitarTrainer {
         }
 
         if (isLabDrawing && currentLabStroke) {
-          currentLabStroke.points.push({ x: hit.x, y: hit.y });
-          this.updateToolCursor(e.clientX, e.clientY, 'lab');
+          const pts = currentLabStroke.points;
+          const lastPt = pts[pts.length - 1];
 
-          if (this.labCtx && this.labLayoutMeta) {
-            const isM1 = hit.page === (this.labLayoutMeta.m1.page || 1);
-            const ox = isM1 ? 0 : this.labLayoutMeta.x2;
-            const oy = isM1 ? this.labLayoutMeta.originY1 : this.labLayoutMeta.originY2;
-            const ratio = this.labLayoutMeta.ratio || 1.0;
-            const curBox = isM1 ? this.labLayoutMeta.m1.box : this.labLayoutMeta.m2.box;
+          if (Math.hypot(hit.x - lastPt.x, hit.y - lastPt.y) >= 2.0) {
+            pts.push({ x: hit.x, y: hit.y });
+            this.updateToolCursor(e.clientX, e.clientY, 'lab');
 
-            this.labCtx.save();
-            this.labCtx.strokeStyle = currentLabStroke.color;
-            this.labCtx.lineWidth = currentLabStroke.width * ratio;
-            this.labCtx.lineCap = 'round';
-            this.labCtx.lineJoin = 'round';
+            if (this.labCtx && this.labLayoutMeta) {
+              const isM1 = hit.page === (this.labLayoutMeta.m1.page || 1);
+              const ox = isM1 ? 0 : this.labLayoutMeta.x2;
+              const oy = isM1 ? this.labLayoutMeta.originY1 : this.labLayoutMeta.originY2;
+              const ratio = this.labLayoutMeta.ratio || 1.0;
+              const curBox = isM1 ? this.labLayoutMeta.m1.box : this.labLayoutMeta.m2.box;
 
-            const pts = currentLabStroke.points;
-            if (pts.length >= 2) {
-              const pA = pts[pts.length - 2];
-              const pB = pts[pts.length - 1];
-
-              const cAx = ox + (pA.x - curBox.left) * ratio;
-              const cAy = oy + (pA.y - curBox.top) * ratio;
-              const cBx = ox + (pB.x - curBox.left) * ratio;
-              const cBy = oy + (pB.y - curBox.top) * ratio;
-
-              this.labCtx.beginPath();
-              this.labCtx.moveTo(cAx, cAy);
-              this.labCtx.lineTo(cBx, cBy);
-              this.labCtx.stroke();
+              this.drawSmoothStroke(this.labCtx, currentLabStroke, ratio, ox, oy, curBox);
             }
-            this.labCtx.restore();
           }
         }
       }
@@ -2006,27 +2023,8 @@ class GuitarTrainer {
     ctx.rect(ox, oy, m.box.width * scale, m.box.height * scale);
     ctx.clip();
 
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
     strokes.forEach(stroke => {
-      if (!stroke.points || stroke.points.length < 2) return;
-      ctx.strokeStyle = stroke.color || '#ef4444';
-      ctx.lineWidth = (stroke.width || 2) * scale;
-      ctx.beginPath();
-      let hasStarted = false;
-
-      stroke.points.forEach(pt => {
-        const x = ox + (pt.x - m.box.left) * scale;
-        const y = oy + (pt.y - m.box.top) * scale;
-        if (!hasStarted) {
-          ctx.moveTo(x, y);
-          hasStarted = true;
-        } else {
-          ctx.lineTo(x, y);
-        }
-      });
-      ctx.stroke();
+      this.drawSmoothStroke(ctx, stroke, scale, ox, oy, m.box);
     });
 
     ctx.restore();

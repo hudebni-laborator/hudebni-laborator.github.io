@@ -660,3 +660,65 @@ header {
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.8), 0 0 8px rgba(245, 158, 11, 0.5);
   color: #d97706;
 }
+
+/* ======================================================== */
+/* POSUVNÁ KRESLICÍ LIŠTA NA MOBILU (TOUCH SCROLLBAR)       */
+/* ======================================================== */
+.edit-draw-bar,
+.lab-draw-bar {
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+  display: flex !important;
+  align-items: center;
+  justify-content: flex-start !important; /* Začíná zleva, aby se dalo plynule scrollovat */
+  gap: 6px;
+  padding: 0 10px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  flex-wrap: nowrap !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  touch-action: pan-x !important; /* Povolí přirozené šoupání lišty do stran */
+}
+
+.edit-draw-bar::-webkit-scrollbar,
+.lab-draw-bar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari */
+}
+
+/* Sdružené skupiny drží pevně pohromadě a nesmršťují se */
+.draw-tool-group,
+.draw-colors-group,
+.draw-widths-group,
+.draw-action-group {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0 !important;
+}
+
+.draw-separator {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.16);
+  flex-shrink: 0 !important;
+  margin: 0 2px;
+}
+
+/* Tlačítka si zachovávají přesnou kruhovou / čtvercovou velikost */
+.draw-tool-btn,
+.color-btn,
+.width-btn {
+  flex-shrink: 0 !important;
+}
+
+/* STYL PRO ČERNOU BARVU */
+.color-black {
+  background: #09090b !important;
+  border: 1.5px solid #71717a !important;
+}
+.color-black.active {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px #09090b, 0 0 0 3.5px #38bdf8 !important;
+}
