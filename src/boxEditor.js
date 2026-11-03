@@ -503,7 +503,7 @@ class PaperCropEditor {
   }
 
   /**
-   * Provede hardwarově akcelerované narovnání 4 rohů a prohnutí vazby do plochého obdélníku
+   * Provede plynulé bilineární narovnání 4 rohů a prohnutí vazby bez trojúhelníků a bez diagonálních švů
    */
   renderDewarpedResult(sourceCanvas) {
     const c = this.corners;
@@ -517,91 +517,81 @@ class PaperCropEditor {
     const dstW = Math.max(100, Math.round((topW + botW) / 2));
     const dstH = Math.max(100, Math.round((leftH + rightH) / 2));
 
+    const srcW = sourceCanvas.width;
+    const srcH = sourceCanvas.height;
+    const srcCtx = sourceCanvas.getContext('2d');
+    const srcImgData = srcCtx.getImageData(0, 0, srcW, srcH);
+    const srcData = srcImgData.data;
+    const srcStride = srcW << 2;
+
     const outCanvas = document.createElement('canvas');
     outCanvas.width = dstW;
     outCanvas.height = dstH;
     const outCtx = outCanvas.getContext('2d');
-    outCtx.imageSmoothingEnabled = true;
-    outCtx.imageSmoothingQuality = 'high';
+    const outImgData = outCtx.createImageData(dstW, dstH);
+    const outData = outImgData.data;
 
-    // Výpočet uzavřeného tvaru afinní transformace pro trojúhelník
-    const mapTriangle = (s0, s1, s2, d0, d1, d2) => {
-      const x0 = s0.x, y0 = s0.y;
-      const x1 = s1.x, y1 = s1.y;
-      const x2 = s2.x, y2 = s2.y;
-      const u0 = d0.x, v0 = d0.y;
-      const u1 = d1.x, v1 = d1.y;
-      const u2 = d2.x, v2 = d2.y;
+    // Předpočet prohnutí vazby pro každý sloupec u (0 .. dstW - 1)
+    const gutterOffsets = new Float32Array(dstW);
+    const denomW = Math.max(1, dstW - 1);
+    for (let u = 0; u < dstW; u++) {
+      gutterOffsets[u] = this.getGutterOffset(u / denomW);
+    }
 
-      const det = x0 * (y1 - y2) + x1 * (y2 - y0) + x2 * (y0 - y1);
-      if (Math.abs(det) < 1e-5) return;
+    const denomH = Math.max(1, dstH - 1);
+    let outIdx = 0;
 
-      const a = ((y1 - y2) * u0 + (y2 - y0) * u1 + (y0 - y1) * u2) / det;
-      const cCoeff = ((x2 - x1) * u0 + (x0 - x2) * u1 + (x1 - x0) * u2) / det;
-      const e = ((x1 * y2 - x2 * y1) * u0 + (x2 * y0 - x0 * y2) * u1 + (x0 * y1 - x1 * y0) * u2) / det;
+    // Plynulý řádkový přepočet pixelů s bilineárním vyhlazením
+    for (let v = 0; v < dstH; v++) {
+      const vNorm = v / denomH;
+      const lx = (1 - vNorm) * c.tl.x + vNorm * c.bl.x;
+      const ly = (1 - vNorm) * c.tl.y + vNorm * c.bl.y;
+      const rx = (1 - vNorm) * c.tr.x + vNorm * c.br.x;
+      const ry = (1 - vNorm) * c.tr.y + vNorm * c.br.y;
 
-      const b = ((y1 - y2) * v0 + (y2 - y0) * v1 + (y0 - y1) * v2) / det;
-      const dCoeff = ((x2 - x1) * v0 + (x0 - x2) * v1 + (x1 - x0) * v2) / det;
-      const f = ((x1 * y2 - x2 * y1) * v0 + (x2 * y0 - x0 * y2) * v1 + (x0 * y1 - x1 * y0) * v2) / det;
+      const stepX = (rx - lx) / denomW;
+      const stepY = (ry - ly) / denomW;
 
-      outCtx.save();
-      outCtx.beginPath();
-      outCtx.moveTo(u0, v0);
-      outCtx.lineTo(u1, v1);
-      outCtx.lineTo(u2, v2);
-      outCtx.closePath();
-      outCtx.clip();
+      let curX = lx;
+      let baseCurY = ly;
 
-      outCtx.transform(a, b, cCoeff, dCoeff, e, f);
-      outCtx.drawImage(sourceCanvas, 0, 0);
-      outCtx.restore();
-    };
+      for (let u = 0; u < dstW; u++) {
+        const sx = curX;
+        const sy = baseCurY + gutterOffsets[u];
 
-    // Síť 24 sloupců x 16 řádků
-    const cols = 24;
-    const rows = 16;
+        curX += stepX;
+        baseCurY += stepY;
 
-    const getSourcePt = (uNorm, vNorm) => {
-      const tx = (1 - uNorm) * c.tl.x + uNorm * c.tr.x;
-      const ty = (1 - uNorm) * c.tl.y + uNorm * c.tr.y;
-      const bx = (1 - uNorm) * c.bl.x + uNorm * c.br.x;
-      const by = (1 - uNorm) * c.bl.y + uNorm * c.br.y;
+        if (sx >= 0 && sx < srcW - 1 && sy >= 0 && sy < srcH - 1) {
+          const x0 = sx | 0;
+          const y0 = sy | 0;
+          const fx = sx - x0;
+          const fy = sy - y0;
+          const w00 = (1 - fx) * (1 - fy);
+          const w10 = fx * (1 - fy);
+          const w01 = (1 - fx) * fy;
+          const w11 = fx * fy;
 
-      const sx = (1 - vNorm) * tx + vNorm * bx;
-      const sy = (1 - vNorm) * ty + vNorm * by + this.getGutterOffset(uNorm);
-      return { x: sx, y: sy };
-    };
+          const idx00 = (y0 * srcW + x0) << 2;
+          const idx10 = idx00 + 4;
+          const idx01 = idx00 + srcStride;
+          const idx11 = idx01 + 4;
 
-    for (let cIdx = 0; cIdx < cols; cIdx++) {
-      const u0 = cIdx / cols;
-      const u1 = (cIdx + 1) / cols;
-      const du0 = Math.round(u0 * dstW);
-      const du1 = Math.round(u1 * dstW);
-
-      for (let rIdx = 0; rIdx < rows; rIdx++) {
-        const v0 = rIdx / rows;
-        const v1 = (rIdx + 1) / rows;
-        const dv0 = Math.round(v0 * dstH);
-        const dv1 = Math.round(v1 * dstH);
-
-        // Rohy čtverce v cílovém rovném obraze
-        const dTL = { x: du0, y: dv0 };
-        const dTR = { x: du1, y: dv0 };
-        const dBL = { x: du0, y: dv1 };
-        const dBR = { x: du1, y: dv1 };
-
-        // Odpovídající rohy v prohnutém zdrojovém obraze
-        const sTL = getSourcePt(u0, v0);
-        const sTR = getSourcePt(u1, v0);
-        const sBL = getSourcePt(u0, v1);
-        const sBR = getSourcePt(u1, v1);
-
-        // Dva trojúhelníky na každý čtverec sítě
-        mapTriangle(sTL, sTR, sBL, dTL, dTR, dBL);
-        mapTriangle(sTR, sBR, sBL, dTR, dBR, dBL);
+          outData[outIdx]     = (srcData[idx00]     * w00 + srcData[idx10]     * w10 + srcData[idx01]     * w01 + srcData[idx11]     * w11 + 0.5) | 0;
+          outData[outIdx + 1] = (srcData[idx00 + 1] * w00 + srcData[idx10 + 1] * w10 + srcData[idx01 + 1] * w01 + srcData[idx11 + 1] * w11 + 0.5) | 0;
+          outData[outIdx + 2] = (srcData[idx00 + 2] * w00 + srcData[idx10 + 2] * w10 + srcData[idx01 + 2] * w01 + srcData[idx11 + 2] * w11 + 0.5) | 0;
+          outData[outIdx + 3] = 255;
+        } else {
+          outData[outIdx]     = 246;
+          outData[outIdx + 1] = 244;
+          outData[outIdx + 2] = 238;
+          outData[outIdx + 3] = 255;
+        }
+        outIdx += 4;
       }
     }
 
+    outCtx.putImageData(outImgData, 0, 0);
     return outCanvas;
   }
 }
