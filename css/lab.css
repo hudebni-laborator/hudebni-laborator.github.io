@@ -337,3 +337,139 @@
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ======================================================== */
+/* DVOURUČNÍ SPOUŠŤ A ZAMĚŘOVAČ PRO PŘESNÉ KRESLENÍ        */
+/* ======================================================== */
+
+/* 1. Zaměřovač (odsazený 48 px nad prstem) */
+.aim-reticle {
+  position: fixed;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1000;
+  border-radius: 50%;
+  border: 1.5px solid #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.5), inset 0 0 6px rgba(56, 189, 248, 0.25);
+  transition: border-color 0.12s, transform 0.1s;
+}
+
+.aim-reticle::before,
+.aim-reticle::after {
+  content: '';
+  position: absolute;
+  background: #38bdf8;
+}
+.aim-reticle::before {
+  top: 50%; left: -6px; right: -6px; height: 1px; transform: translateY(-50%);
+}
+.aim-reticle::after {
+  left: 50%; top: -6px; bottom: -6px; width: 1px; transform: translateX(-50%);
+}
+
+.reticle-dot {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 4px; height: 4px;
+  background: #38bdf8;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 4px #ffffff;
+}
+
+/* Stav při stisknuté spoušti (pero na papíře) */
+.aim-reticle.is-firing {
+  border-color: #ef4444;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.75), inset 0 0 8px rgba(239, 68, 68, 0.4);
+  transform: translate(-50%, -50%) scale(1.15);
+}
+.aim-reticle.is-firing::before,
+.aim-reticle.is-firing::after {
+  background: #ef4444;
+}
+.aim-reticle.is-firing .reticle-dot {
+  background: #ef4444;
+  box-shadow: 0 0 6px #fca5a5;
+}
+
+/* Varovný stav mimo platný výřez not */
+.aim-reticle.out-of-bounds {
+  border-color: #71717a !important;
+  border-style: dashed !important;
+  box-shadow: none !important;
+  opacity: 0.5;
+}
+.aim-reticle.out-of-bounds::before,
+.aim-reticle.out-of-bounds::after,
+.aim-reticle.out-of-bounds .reticle-dot {
+  background: #71717a !important;
+  box-shadow: none !important;
+}
+
+/* 2. Plovoucí spoušť pro druhou ruku */
+.pen-trigger-btn {
+  position: fixed;
+  left: 18px;
+  bottom: 60px;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(18, 18, 24, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px solid rgba(56, 189, 248, 0.6);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.75), 0 0 12px rgba(56, 189, 248, 0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 800;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.1s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.15s;
+}
+
+.pen-trigger-btn .trigger-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.pen-trigger-btn .trigger-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #38bdf8;
+  letter-spacing: 0.04em;
+  margin-top: 1px;
+}
+
+.pen-trigger-btn.active-firing {
+  background: #38bdf8 !important;
+  border-color: #ffffff !important;
+  transform: scale(0.92) !important;
+  box-shadow: 0 0 24px rgba(56, 189, 248, 0.9) !important;
+}
+.pen-trigger-btn.active-firing .trigger-label {
+  color: #09090b !important;
+}
+
+@media (orientation: landscape) and (max-height: 700px) {
+  .pen-trigger-btn {
+    left: 14px;
+    bottom: 44px;
+    width: 52px;
+    height: 52px;
+  }
+}
+
+/* 3. Zvýraznění hranic výřezu taktu při kreslení */
+.rect-loupe-lens.drawing-mode-active {
+  background-color: #1a1a20 !important;
+}
+.rect-loupe-lens.drawing-mode-active #labCanvas {
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.7), 0 0 0 1.5px rgba(56, 189, 248, 0.5) !important;
+}

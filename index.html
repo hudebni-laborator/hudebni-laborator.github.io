@@ -39,7 +39,6 @@
 
   <!-- 1. ZÁLOŽKA: KNIHOVNA -->
   <div class="view-panel" id="libraryView">
-    <!-- Hlavní akční tlačítka pro vložení not -->
     <div class="library-action-grid">
       <label class="btn btn-primary lib-big-btn">
         📷 Fotit noty
@@ -51,7 +50,6 @@
       </label>
     </div>
 
-    <!-- Řazení a správa záloh -->
     <div class="library-subtoolbar">
       <div class="lib-sort-group">
         <span class="lib-sort-lbl">Řadit:</span>
@@ -131,7 +129,7 @@
       <div class="page-turn-zone zone-right" id="zoneRight" onclick="window.app.changePage(1)"></div>
     </div>
 
-    <!-- EDITAČNÍ KRESLICÍ LIŠTA V HRANÍ (bez textů) -->
+    <!-- EDITAČNÍ KRESLICÍ LIŠTA V HRANÍ -->
     <div class="edit-draw-bar" id="editDrawBar" style="display:none;">
       <div class="draw-tool-group">
         <button class="draw-tool-btn active" id="toolBoxBtn" onclick="window.app.setEditTool('box')" title="Označit takt (box)">🔲</button>
@@ -152,11 +150,12 @@
 
       <div class="draw-separator"></div>
 
+      <!-- Barvy v Hraní (bez prefixu lab) -->
       <div class="draw-colors-group">
-        <button class="color-btn color-black active" id="labColorBlack" onclick="window.app.setPenColor('#18181b')" title="Černá"></button>
-        <button class="color-btn color-red" id="labColorRed" onclick="window.app.setPenColor('#ef4444')" title="Červená"></button>
-        <button class="color-btn color-green" id="labColorGreen" onclick="window.app.setPenColor('#10b981')" title="Zelená"></button>
-        <button class="color-btn color-blue" id="labColorBlue" onclick="window.app.setPenColor('#3b82f6')" title="Modrá"></button>
+        <button class="color-btn color-black active" onclick="window.app.setPenColor('#18181b')" title="Černá"></button>
+        <button class="color-btn color-red" onclick="window.app.setPenColor('#ef4444')" title="Červená"></button>
+        <button class="color-btn color-green" onclick="window.app.setPenColor('#10b981')" title="Zelená"></button>
+        <button class="color-btn color-blue" onclick="window.app.setPenColor('#3b82f6')" title="Modrá"></button>
       </div>
 
       <div class="draw-separator"></div>
@@ -204,13 +203,11 @@
 
       <!-- DVOJICE KRUHOVÝCH TLAČÍTEK METRONOMU -->
       <div class="play-metro-circles-group">
-        <!-- Kruh 1: Otevření velkého výsuvného nastavení metronomu -->
         <button class="metro-circle-btn metro-tempo-btn" id="playMetroSettingsBtn" onclick="window.app.metronome.openSheet()" title="Nastavení tempa a metronomu">
           <span class="tempo-btn-val" id="playMetroBpmText">92</span>
           <span class="tempo-btn-sub">BPM</span>
         </button>
 
-        <!-- Kruh 2: Spuštění / Zastavení -->
         <button class="metro-circle-btn circle-idle" id="playMetroCircleBtn" onclick="window.app.toggleIncrementalMetronome()" title="Spustit / Zastavit metronom">
           <span class="circle-icon" id="playMetroCircleIcon">▶</span>
         </button>
@@ -221,6 +218,7 @@
   <!-- 3. ZÁLOŽKA: LABORATOŘ -->
   <div class="view-panel practice-panel" id="labView" style="display:none; padding:8px 6px;">
     
+    <!-- Hlavní zobrazovací plocha: drží POUZE klíč a lupu -->
     <div class="lab-main-area" id="labMainArea">
       <!-- Horní řádek: Zvětšený klíč a fronta taktů na stejném řádku -->
       <div class="lab-top-row" id="labTopRow">
@@ -246,8 +244,7 @@
       </div>
     </div>
 
-    <!-- EDITAČNÍ KRESLICÍ LIŠTA V LABORATOŘI (Tužka se svícením, Bělítko, Guma) -->
-    <!-- EDITAČNÍ KRESLICÍ LIŠTA V LABORATOŘI (bez textů) -->
+    <!-- EDITAČNÍ KRESLICÍ LIŠTA V LABORATOŘI -->
     <div class="lab-draw-bar" id="labDrawBar">
       <div class="draw-tool-group">
         <button class="draw-tool-btn" id="labToolPenBtn" onclick="window.app.toggleLabPen()" title="Tužka">
@@ -267,11 +264,12 @@
 
       <div class="draw-separator"></div>
 
+      <!-- Barvy v Laboratoři (se správnými ID labColor...) -->
       <div class="draw-colors-group">
-        <button class="color-btn color-black active" onclick="window.app.setPenColor('#18181b')" title="Černá"></button>
-        <button class="color-btn color-red" onclick="window.app.setPenColor('#ef4444')" title="Červená"></button>
-        <button class="color-btn color-green" onclick="window.app.setPenColor('#10b981')" title="Zelená"></button>
-        <button class="color-btn color-blue" onclick="window.app.setPenColor('#3b82f6')" title="Modrá"></button>
+        <button class="color-btn color-black active" id="labColorBlack" onclick="window.app.setPenColor('#18181b')" title="Černá"></button>
+        <button class="color-btn color-red" id="labColorRed" onclick="window.app.setPenColor('#ef4444')" title="Červená"></button>
+        <button class="color-btn color-green" id="labColorGreen" onclick="window.app.setPenColor('#10b981')" title="Zelená"></button>
+        <button class="color-btn color-blue" id="labColorBlue" onclick="window.app.setPenColor('#3b82f6')" title="Modrá"></button>
       </div>
 
       <div class="draw-separator"></div>
@@ -296,12 +294,10 @@
       </div>
     </div>
 
-    <!-- POHODLNÁ AKČNÍ LIŠTA -->
-    <!-- AKČNÍ LIŠTA LABORATOŘE: V landscape má vlevo informační proužek vedle 1:1 -->
+    <!-- AKČNÍ LIŠTA LABORATOŘE -->
     <div class="lab-action-bar">
       <div class="lab-action-side lab-action-left">
         <button class="btn btn-sm" onclick="window.app.fitLabCanvas()" title="Přizpůsobit velikost do okénka" style="padding: 6px 8px;">🔍 1:1</button>
-        <!-- V landscape se zobrazí tady vedle 1:1 -->
         <div class="lab-landscape-metro-info" id="labLandscapeMetroInfo" onclick="window.app.metronome.openSheet()" title="Klepnutím otevřete nastavení tempa a cvičení">
           <span class="summary-chip" id="labSumStartLand">Start: 60</span>
           <span class="summary-chip chip-target" id="labSumTargetLand">🎯 Cíl: 100</span>
@@ -323,6 +319,17 @@
         </button>
       </div>
     </div>
+
+    <!-- ZAMĚŘOVAČ PRO PŘESNÉ KRESLENÍ (48 px nad prstem) – SPRÁVNĚ ZDE MIMO FLEXBOX -->
+    <div id="aimReticle" class="aim-reticle" style="display:none;">
+      <div class="reticle-dot"></div>
+    </div>
+
+    <!-- DVOURUČNÍ SPOUŠŤ PRO DRUHOU RUKU – SPRÁVNĚ ZDE MIMO FLEXBOX -->
+    <button id="penTriggerBtn" class="pen-trigger-btn" style="display:none;" title="Držením kreslíte, klepnutím uděláte staccato tečku">
+      <span class="trigger-icon">✒️</span>
+      <span class="trigger-label">Spoušť</span>
+    </button>
   </div>
 
   <!-- DOKOVACÍ METRONOM V LABORATOŘI S DVOUŘÁDKOVÝM PŘEHLEDEM V PORTRAIT -->
@@ -335,7 +342,6 @@
         <div class="beat-light"></div>
       </div>
 
-      <!-- Informační blok v portrétu: 2 řádky bez duplicitního BPM -->
       <div class="metro-info-block" id="metroInfoBlockPortrait" onclick="window.app.metronome.openSheet()" title="Klepnutím otevřete nastavení tempa a cvičení">
         <div class="metro-summary-row">
           <span class="summary-chip" id="labSumStart">Start: 60</span>
@@ -348,13 +354,11 @@
         </div>
       </div>
 
-      <!-- Kruhové tlačítko s BPM -->
       <button class="metro-circle-btn metro-tempo-btn" id="labMetroSettingsBtn" onclick="window.app.metronome.openSheet()" title="Nastavení tempa a metronomu">
         <span class="tempo-btn-val" id="labMetroBpmDisplay">60</span>
         <span class="tempo-btn-sub">BPM</span>
       </button>
 
-      <!-- Spouštěcí kruhové tlačítko -->
       <button class="metro-circle-btn circle-idle" id="metroCircleBtn" onclick="window.app.toggleIncrementalMetronome()" title="Spustit / Zastavit cvičení">
         <span class="circle-icon" id="metroCircleIcon">▶</span>
       </button>
@@ -376,7 +380,7 @@
         <div class="metro-tempo-header">
           <span class="slider-type-lbl">Startovní tempo:</span>
           <div class="metro-tempo-display">
-            <span id="sheetStartVal" class="bpm-large">60</span>
+            <span id="sheetStartVal" class="bpm-large val-start">60</span>
             <span class="bpm-unit">BPM</span>
           </div>
           <div class="step-btn-group">
@@ -384,7 +388,7 @@
             <button class="step-btn-mini" onclick="window.app.metronome.adjustSheetStart(5)">+5</button>
           </div>
         </div>
-        <input type="range" id="sheetStartSlider" class="full-width-range" min="30" max="260" value="60" 
+        <input type="range" id="sheetStartSlider" class="full-width-range range-start" min="30" max="260" value="60" 
                oninput="window.app.metronome.onSheetStartInput(this.value)">
       </div>
 
@@ -393,7 +397,7 @@
         <div class="metro-tempo-header">
           <span class="slider-type-lbl">Cílové tempo:</span>
           <div class="metro-tempo-display">
-            <span id="sheetTargetVal" class="bpm-large text-gold">100</span>
+            <span id="sheetTargetVal" class="bpm-large val-target">100</span>
             <span class="bpm-unit">BPM</span>
           </div>
           <div class="step-btn-group">
@@ -402,7 +406,7 @@
             <button class="btn-even" onclick="window.app.metronome.matchSheetTargetToStart()" title="Vypnout zrychlování (Cíl = Start)">Rovnoměrně</button>
           </div>
         </div>
-        <input type="range" id="sheetTargetSlider" class="full-width-range range-gold" min="30" max="260" value="100" 
+        <input type="range" id="sheetTargetSlider" class="full-width-range range-target" min="30" max="260" value="100" 
                oninput="window.app.metronome.onSheetTargetInput(this.value)">
       </div>
 
@@ -445,7 +449,7 @@
         </div>
       </div>
 
-      <!-- 7. ZRYCHLENÍ O (KROK) – VČETNĚ MOŽNOSTI +3 -->
+      <!-- 7. ZRYCHLENÍ O (KROK) -->
       <div class="selector-row">
         <span class="selector-label">Zrychlení o:</span>
         <div class="pill-group" id="stepPillGroup">
@@ -463,7 +467,6 @@
     <canvas id="loupeCanvas" width="130" height="130"></canvas>
   </div>
 
-  <!-- Vizuální hranice nástroje pod prstem / kurzorem -->
   <div id="toolCursor" class="tool-cursor" style="display:none;"></div>
 
   <script src="./src/wakeLock.js"></script>
