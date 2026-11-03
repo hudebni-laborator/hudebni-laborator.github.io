@@ -877,7 +877,22 @@ class GuitarTrainer {
     }
   }
 
-  async exportBackupJSON() {
+  openBackupModal() {
+    const modal = document.getElementById('backupModal');
+    if (modal) modal.style.display = 'flex';
+  }
+
+  closeBackupModal() {
+    const modal = document.getElementById('backupModal');
+    if (modal) modal.style.display = 'none';
+  }
+
+  async performBackup(includePdf = false) {
+    this.closeBackupModal();
+    await this.exportBackupJSON(includePdf);
+  }
+
+  async exportBackupJSON(includePdf = false) {
     try {
       const all = await window.scoreDB.getAllScores();
       if (!all || all.length === 0) {
@@ -885,13 +900,19 @@ class GuitarTrainer {
         return;
       }
 
-      // Binární PDF data převedeme do Base64, aby je JSON neproměnil v prázdný objekt {}
+      // Před exportem do JSON:
+      // Pokud includePdf === true, binární PDF se zakóduje do Base64.
+      // Pokud includePdf === false, pdfData se vynechá (null), ale všechna data taktů i kreseb zůstávají zachována.
       const exportData = all.map(s => {
         const item = { ...s };
-        if (item.isPdf && item.pdfData) {
-          const buf = this.parsePdfData(item.pdfData);
-          if (buf) {
-            item.pdfData = this.arrayBufferToBase64(buf);
+        if (item.isPdf) {
+          if (includePdf && item.pdfData) {
+            const buf = this.parsePdfData(item.pdfData);
+            if (buf) {
+              item.pdfData = this.arrayBufferToBase64(buf);
+            }
+          } else {
+            item.pdfData = null; // Vynechá těžká binární data PDF
           }
         }
         return item;
@@ -901,9 +922,10 @@ class GuitarTrainer {
       const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
 
+      const typeLabel = includePdf ? 'komplet' : 'data';
       const downloadAnchor = document.createElement('a');
       downloadAnchor.setAttribute("href", url);
-      downloadAnchor.setAttribute("download", `hudebni-laborator-zaloha-${new Date().toISOString().slice(0, 10)}.json`);
+      downloadAnchor.setAttribute("download", `hudebni-laborator-${typeLabel}-${new Date().toISOString().slice(0, 10)}.json`);
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();

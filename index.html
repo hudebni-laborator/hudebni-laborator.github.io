@@ -58,7 +58,7 @@
       </div>
 
       <div class="lib-backup-group">
-        <button class="btn btn-sm" onclick="window.app.exportBackupJSON()" title="Uložit zálohu do souboru">💾 Záloha</button>
+        <button class="btn btn-sm" onclick="window.app.openBackupModal()" title="Uložit zálohu do souboru">💾 Záloha</button>
         <label class="btn btn-sm" title="Nahrát zálohu ze souboru">
           📥 Obnovit
           <input type="file" id="importBackupInput" class="file-input" accept=".json,application/json,text/plain,*/*" onclick="this.value=null" onchange="window.app.importBackupJSON(event)">
@@ -459,6 +459,46 @@
           <button class="pill-btn" onclick="window.app.metronome.setStepBpm(4)">+4</button>
           <button class="pill-btn" onclick="window.app.metronome.setStepBpm(5)">+5</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- VÝSUVNÝ DIALOG PRO VÝBĚR TYPU ZÁLOHY A DOPORUČENÍ -->
+  <div id="backupModal" class="metro-sheet-backdrop" style="display:none;" onclick="if(event.target===this) window.app.closeBackupModal()">
+    <div class="metro-sheet-card backup-sheet-card">
+      <div class="sheet-drag-handle"></div>
+
+      <div class="sheet-header">
+        <span class="sheet-title">💾 Možnosti zálohování</span>
+        <button class="sheet-close-btn" onclick="window.app.closeBackupModal()">✕</button>
+      </div>
+
+      <!-- Výběr typu zálohy -->
+      <div class="backup-choice-grid">
+        <button class="backup-choice-btn btn-choice-light" onclick="window.app.performBackup(false)">
+          <div class="choice-title">⚡ Pouze data (Doporučeno)</div>
+          <div class="choice-desc">
+            Uloží všechny takty, klíče, cvičení, poznámky perem a vyfocené noty. 
+            U PDF skladeb <strong>neukládá samotné PDF soubory</strong> – záloha má pouze několik kB a stáhne se okamžitě.
+          </div>
+        </button>
+
+        <button class="backup-choice-btn btn-choice-full" onclick="window.app.performBackup(true)">
+          <div class="choice-title">📦 Kompletní záloha (Včetně PDF)</div>
+          <div class="choice-desc">
+            Zahrne do jednoho JSON souboru i plná binární data všech nahraných PDF skladeb. Soubor bude výrazně větší.
+          </div>
+        </button>
+      </div>
+
+      <!-- Doporučení pro správu souborů -->
+      <div class="backup-recommendation-box">
+        <div class="rec-header">💡 Doporučení pro správu a zálohu not:</div>
+        <ul class="rec-list">
+          <li><strong>Mějte PDF ve vyhrazené složce:</strong> Ukládejte si všechny notové PDF soubory do jedné konkrétní složky v zařízení (např. <em>Dokumenty/Noty</em>).</li>
+          <li><strong>Zálohujte složku na Google Disk:</strong> Tuto složku s PDF samostatně synchronizujte nebo zálohujte na svůj <strong>Google Disk</strong> (nebo jiné cloudové úložiště).</li>
+          <li><strong>Rychlé propojení:</strong> Z aplikace vám pak stačí zálohovat pouze lehkou variantu <em>Pouze data</em>. Pokud kdykoliv aplikaci obnovíte v jiném zařízení, stačí u skladeb klepnout na <strong>⋮</strong> a zvolit <strong>📎 Přiřadit / Nahradit PDF</strong> z vašeho Google Disku.</li>
+        </ul>
       </div>
     </div>
   </div>

@@ -724,3 +724,101 @@ header {
   border-color: #38bdf8 !important;
   box-shadow: 0 0 0 2px #09090b, 0 0 0 3.5px #38bdf8 !important;
 }
+
+/* ======================================================== */
+/* DIALOG PRO EXPORT ZÁLOHY                                 */
+/* ======================================================== */
+.backup-sheet-card {
+  max-width: 500px !important;
+}
+
+.backup-choice-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.backup-choice-btn {
+  background: var(--surface-elevated);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.backup-choice-btn:active {
+  transform: scale(0.98);
+}
+
+.btn-choice-light {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.08);
+}
+.btn-choice-light:hover, .btn-choice-light:active {
+  background: rgba(56, 189, 248, 0.16);
+  border-color: #38bdf8;
+}
+.btn-choice-light .choice-title {
+  color: #38bdf8;
+}
+
+.btn-choice-full {
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.06);
+}
+.btn-choice-full:hover, .btn-choice-full:active {
+  background: rgba(245, 158, 11, 0.14);
+  border-color: #f59e0b;
+}
+.btn-choice-full .choice-title {
+  color: #fbbf24;
+}
+
+.choice-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.choice-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.choice-desc strong {
+  color: var(--text);
+}
+
+/* Rámeček s doporučením */
+.backup-recommendation-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.rec-header {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #fde047;
+  margin-bottom: 6px;
+}
+
+.rec-list {
+  padding-left: 18px;
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rec-list strong {
+  color: var(--text);
+}
