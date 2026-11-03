@@ -576,6 +576,7 @@ class GuitarTrainer {
     menu.className = 'item-dropdown-menu';
     menu.id = `menu_${id}`;
     menu.innerHTML = `
+      <button class="item-dropdown-btn" onclick="window.app.promptAttachPdf('${id}', event)">📎 Přiřadit / Nahradit PDF</button>
       <button class="item-dropdown-btn" onclick="window.app.renameScore('${id}', event)">✏ Přejmenovat</button>
       <button class="item-dropdown-btn btn-drop-danger" onclick="window.app.deleteScoreFromLibrary('${id}', event)">🗑 Smazat</button>
     `;
@@ -659,10 +660,20 @@ class GuitarTrainer {
 
     if (score.isPdf && score.pdfData) {
       try {
-        const copy = new Uint8Array(score.pdfData.slice(0));
-        this.pdfDoc = await pdfjsLib.getDocument({ data: copy }).promise;
-        this.totalPages = this.pdfDoc.numPages;
-      } catch (_) { this.totalPages = 1; }
+        const buffer = this.parsePdfData(score.pdfData);
+        if (buffer && buffer.byteLength > 0) {
+          const copy = new Uint8Array(buffer.slice(0));
+          this.pdfDoc = await pdfjsLib.getDocument({ data: copy }).promise;
+          this.totalPages = this.pdfDoc.numPages;
+        } else {
+          this.pdfDoc = null;
+          this.totalPages = 1;
+        }
+      } catch (err) {
+        console.warn('PDF se nepodařilo načíst:', err);
+        this.pdfDoc = null;
+        this.totalPages = 1;
+      }
     } else {
       this.totalPages = (score.pages?.length > 0) ? score.pages.length : 1;
     }
@@ -767,6 +778,105 @@ class GuitarTrainer {
     this.renderLibraryList(all);
   }
 
+  /**
+   * Převede binární ArrayBuffer na Base64 řetězec (pro JSON zálohu)
+   */
+  arrayBufferToBase64(buffer) {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const len = bytes.byteLength;
+    const chunkSize = 0x8000;
+    for (let i = 0; i < len; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binary);
+  }
+
+  /**
+   * Převede Base64 řetězec zpět na ArrayBuffer
+   */
+  base64ToArrayBuffer(base64) {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  /**
+   * Bezpečně vrátí ArrayBuffer bez ohledu na formát uložení (Base64, ArrayBuffer, TypedArray)
+   */
+  parsePdfData(data) {
+    if (!data) return null;
+    if (data instanceof ArrayBuffer) return data;
+    if (ArrayBuffer.isView(data)) return data.buffer;
+    if (typeof data === 'string') {
+      const cleanB64 = data.replace(/^data:application\/pdf;base64,/, '');
+      try { return this.base64ToArrayBuffer(cleanB64); } catch (_) { return null; }
+    }
+    if (typeof data === 'object') {
+      const keys = Object.keys(data);
+      if (keys.length > 0 && !isNaN(keys[0])) {
+        const bytes = new Uint8Array(keys.length);
+        for (let i = 0; i < keys.length; i++) bytes[i] = data[i];
+        return bytes.buffer;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Otevře systémový dialog pro výběr PDF souboru k existující skladbě
+   */
+  promptAttachPdf(id, e) {
+    if (e) e.stopPropagation();
+    document.querySelectorAll('.item-dropdown-menu').forEach(el => el.remove());
+    document.querySelectorAll('.library-item').forEach(item => item.classList.remove('has-open-menu'));
+
+    let picker = document.getElementById('attachPdfInput');
+    if (!picker) {
+      picker = document.createElement('input');
+      picker.type = 'file';
+      picker.id = 'attachPdfInput';
+      picker.accept = 'application/pdf';
+      picker.style.display = 'none';
+      document.body.appendChild(picker);
+    }
+
+    picker.onchange = async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      await this.attachPdfToExistingScore(id, file);
+      picker.value = '';
+    };
+
+    picker.click();
+  }
+
+  /**
+   * Naroubuje vybrané PDF na skladbu v databázi se zachováním taktů i kreseb
+   */
+  async attachPdfToExistingScore(id, file) {
+    try {
+      const score = await window.scoreDB.getScore(id);
+      if (!score) return;
+
+      const buffer = await file.arrayBuffer();
+      score.isPdf = true;
+      score.pdfData = buffer;
+      score.updatedAt = Date.now();
+
+      await window.scoreDB.saveScore(score);
+      alert(`PDF soubor „${file.name}“ byl úspěšně přiřazen ke skladbě „${score.name}“. Všechny takty i poznámky zůstaly zachovány.`);
+
+      await this.loadScore(id, true);
+    } catch (err) {
+      alert('Chyba při přiřazení PDF: ' + err.message);
+    }
+  }
+
   async exportBackupJSON() {
     try {
       const all = await window.scoreDB.getAllScores();
@@ -774,14 +884,31 @@ class GuitarTrainer {
         alert('Knihovna je prázdná.');
         return;
       }
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(all));
+
+      // Binární PDF data převedeme do Base64, aby je JSON neproměnil v prázdný objekt {}
+      const exportData = all.map(s => {
+        const item = { ...s };
+        if (item.isPdf && item.pdfData) {
+          const buf = this.parsePdfData(item.pdfData);
+          if (buf) {
+            item.pdfData = this.arrayBufferToBase64(buf);
+          }
+        }
+        return item;
+      });
+
+      const jsonStr = JSON.stringify(exportData);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+
       const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("href", url);
       downloadAnchor.setAttribute("download", `hudebni-laborator-zaloha-${new Date().toISOString().slice(0, 10)}.json`);
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
-    } catch (err) { alert('Chyba: ' + err.message); }
+      URL.revokeObjectURL(url);
+    } catch (err) { alert('Chyba při exportu: ' + err.message); }
   }
 
   async importBackupJSON(e) {
@@ -806,6 +933,13 @@ class GuitarTrainer {
       let count = 0;
       for (const score of scoresArray) {
         if (score && score.id && score.name) {
+          // Pokud je PDF uloženo v Base64, převedeme ho zpět na nativní ArrayBuffer
+          if (score.isPdf && score.pdfData) {
+            const buf = this.parsePdfData(score.pdfData);
+            if (buf) {
+              score.pdfData = buf;
+            }
+          }
           await window.scoreDB.saveScore(score);
           count++;
         }
