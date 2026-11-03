@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hudebni-laborator-v96';
+const CACHE_NAME = 'hudebni-laborator-v97'; // <--- Zvýšení verze
 const ASSETS = [
   './',
   './index.html',
@@ -20,10 +20,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting(); // Okamžitá instalace bez čekání
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -34,9 +34,14 @@ self.addEventListener('activate', (event) => {
           if (key !== CACHE_NAME) return caches.delete(key);
         })
       )
-    )
+    ).then(() => self.clients.claim()) // Okamžité převzetí řízení nad všemi okny
   );
-  self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.action === 'skipWaiting') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {

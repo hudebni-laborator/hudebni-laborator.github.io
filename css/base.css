@@ -43,8 +43,10 @@ html, body {
   width: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  position: fixed; /* Zabrání gumovému posunu celé stránky na iOS a Androidu */
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: auto !important; /* Povolí gesto přetažení seshora (Pull-to-refresh) */
+  -webkit-overflow-scrolling: touch;
 }
 
 body {

@@ -478,7 +478,32 @@
   <script src="./src/app.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(console.error);
+      let refreshing = false;
+
+      // Jakmile nový Service Worker převezme řízení, automaticky stránku jednou obnovíme
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
+
+      navigator.serviceWorker.register('./sw.js').then((reg) => {
+        // Zkontroluje dostupnost nové verze na serveru
+        reg.update();
+
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                // Pošle příkaz k okamžité aktivaci
+                newWorker.postMessage({ action: 'skipWaiting' });
+              }
+            });
+          }
+        });
+      }).catch(console.error);
     }
   </script>
 </body>
