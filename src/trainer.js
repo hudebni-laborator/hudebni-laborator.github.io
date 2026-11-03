@@ -655,6 +655,13 @@ class GuitarTrainer {
     this.hasUserAdjustedView = false;
     this.pageCache.clear();
     this.resetActiveSelection();
+    // Zajistí, že skladba vždy začíná v čistém režimu Hraní bez editační lišty
+    if (this.isMarkingMode) {
+      this.toggleInteractionMode();
+    } else {
+      const drawBar = document.getElementById('editDrawBar');
+      if (drawBar) drawBar.style.display = 'none';
+    }
     this.dismissAddPagePrompt();
     this._lastRenderedClefKey = null; // Vynuluje paměť klíče pro novou skladbu
 

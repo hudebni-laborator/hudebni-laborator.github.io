@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hudebni-laborator-v101'; // <--- Zvýšení verze
+const CACHE_NAME = 'hudebni-laborator-v102'; // <--- Zvýšení verze
 const ASSETS = [
   './',
   './index.html',
