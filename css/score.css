@@ -404,12 +404,14 @@ body.is-fullscreen .floating-fs-btn {
   white-space: nowrap;
 }
 
-/* Ořezová lišta v horní části plátna */
+/* ======================================================== */
+/* VYLEPŠENÁ OŘEZOVÁ LIŠTA NA MOBILU                        */
+/* ======================================================== */
 .crop-toolbar {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  right: 10px;
+  top: 8px;
+  left: 8px;
+  right: 8px;
   z-index: 1150;
   background: rgba(15, 23, 42, 0.96) !important;
   backdrop-filter: blur(14px);
@@ -417,11 +419,70 @@ body.is-fullscreen .floating-fs-btn {
   border: 1px solid #38bdf8 !important;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.8) !important;
   border-radius: var(--radius-md);
-  padding: 6px 12px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.crop-toolbar-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  width: auto !important;
+  width: 100%;
+}
+
+.crop-title {
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: #38bdf8;
+}
+
+.crop-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.crop-toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 6px;
+}
+
+.crop-control-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crop-lbl {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+.crop-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.crop-slider-wrap input[type=range] {
+  width: 90px;
+  height: 18px;
+  accent-color: #38bdf8;
+  cursor: pointer;
+}
+
+.crop-slider-val {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #ffffff;
+  min-width: 32px;
 }
 
 /* PŘILEPENÁ SPODNÍ LIŠTA V HRANÍ */

@@ -87,12 +87,44 @@
       </div>
     </div>
 
-    <!-- Ořezová lišta papíru (při aktivním ořezu) -->
+    <!-- VYLEPŠENÁ OŘEZOVÁ LIŠTA (4-BODOVÁ PERSPEKTIVA + PROHNUTÍ VAZBY) -->
     <div class="toolbar crop-toolbar" id="cropToolbar" style="display:none;">
-      <span style="font-weight:700; font-size:0.85rem; color:#38bdf8;">✂ Nastavte okraje not</span>
-      <div style="display:flex; gap:6px;">
-        <button class="btn btn-accent btn-sm" onclick="window.app.applyPaperCrop()">✔ Oříznout</button>
-        <button class="btn btn-danger btn-sm" onclick="window.app.cancelPaperCrop()">✖ Zrušit</button>
+      <div class="crop-toolbar-top">
+        <span class="crop-title">✂ Narovnání a ořez not</span>
+        <div class="crop-actions">
+          <button class="btn btn-accent btn-sm" onclick="window.app.applyPaperCrop()">✔ Oříznout</button>
+          <button class="btn btn-danger btn-sm" onclick="window.app.cancelPaperCrop()">✖ Zrušit</button>
+        </div>
+      </div>
+
+      <!-- Voliče vazby a prohnutí -->
+      <div class="crop-toolbar-controls">
+        <div class="crop-control-group">
+          <span class="crop-lbl">Vazba:</span>
+          <div class="pill-group">
+            <button class="pill-btn active" id="cropSpineNone" onclick="window.app.cropEditor.setSpineMode('none')">Rovný</button>
+            <button class="pill-btn" id="cropSpineLeft" onclick="window.app.cropEditor.setSpineMode('left')">◨ Vlevo</button>
+            <button class="pill-btn" id="cropSpineRight" onclick="window.app.cropEditor.setSpineMode('right')">◧ Vpravo</button>
+          </div>
+        </div>
+
+        <div class="crop-control-group" id="cropCurveGroup" style="display:none;">
+          <span class="crop-lbl">Průhyb:</span>
+          <div class="crop-slider-wrap">
+            <input type="range" id="cropCurveSlider" min="-60" max="60" value="0" step="1" 
+                   oninput="window.app.cropEditor.setCurveAmp(this.value)">
+            <span class="crop-slider-val" id="cropCurveVal">0 px</span>
+          </div>
+        </div>
+
+        <div class="crop-control-group" id="cropWidthGroup" style="display:none;">
+          <span class="crop-lbl">Šířka:</span>
+          <div class="crop-slider-wrap">
+            <input type="range" id="cropWidthSlider" min="10" max="45" value="25" step="1" 
+                   oninput="window.app.cropEditor.setCurveSpan(this.value)">
+            <span class="crop-slider-val" id="cropWidthVal">25 %</span>
+          </div>
+        </div>
       </div>
     </div>
 

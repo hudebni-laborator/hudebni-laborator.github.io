@@ -1143,53 +1143,14 @@ class GuitarTrainer {
 
   async applyPaperCrop() {
     if (!this.cropEditor || !this.isCropMode) return;
-    const b = this.cropEditor.box;
     const cleanCanvas = this.pageCache.get(this.currentPage);
     if (!cleanCanvas) return;
 
-    const cropX = Math.max(0, Math.round(b.left));
-    const cropY = Math.max(0, Math.round(b.top));
-    const cropW = Math.max(50, Math.min(cleanCanvas.width - cropX, Math.round(b.width)));
-    const cropH = Math.max(50, Math.min(cleanCanvas.height - cropY, Math.round(b.height)));
-
-    const croppedCanvas = document.createElement('canvas');
-    croppedCanvas.width = cropW;
-    croppedCanvas.height = cropH;
-    const cctx = croppedCanvas.getContext('2d');
-    cctx.drawImage(cleanCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
+    // Provede plné 4-bodové narovnání i srovnání prohnutí vazby
+    const croppedCanvas = this.cropEditor.renderDewarpedResult(cleanCanvas);
     const croppedDataUrl = croppedCanvas.toDataURL('image/jpeg', 0.92);
 
-    if (this.currentScore.measures) {
-      this.currentScore.measures.forEach(m => {
-        if ((m.page || 1) === this.currentPage) {
-          m.box.left = Math.max(0, m.box.left - cropX);
-          m.box.top = Math.max(0, m.box.top - cropY);
-        }
-      });
-    }
-
-    if (this.currentScore.keySignatures) {
-      this.currentScore.keySignatures.forEach(k => {
-        if ((k.page || 1) === this.currentPage) {
-          k.box.left = Math.max(0, k.box.left - cropX);
-          k.box.top = Math.max(0, k.box.top - cropY);
-        }
-      });
-    }
-
-    const pageKey = `page_${this.currentPage}`;
-    if (this.currentScore.drawings && this.currentScore.drawings[pageKey]) {
-      this.currentScore.drawings[pageKey].forEach(stroke => {
-        if (stroke.points) {
-          stroke.points.forEach(pt => {
-            pt.x -= cropX;
-            pt.y -= cropY;
-          });
-        }
-      });
-    }
-
+    // Aktualizujeme mezipaměť a data skladby
     this.pageCache.set(this.currentPage, croppedCanvas);
 
     if (this.currentScore.pages && this.currentScore.pages.length > 0) {
