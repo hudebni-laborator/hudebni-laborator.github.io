@@ -683,9 +683,9 @@ header {
   touch-action: pan-x !important;
 }
 
-/* V Laboratoři je lišta zobrazena stále */
+/* V Laboratoři je lišta zobrazena v portrait */
 .lab-draw-bar {
-  display: flex !important;
+  display: flex;
 }
 
 /* V Hraní se zobrazí jen tehdy, když ji JavaScript aktivuje */
