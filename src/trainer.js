@@ -1815,7 +1815,6 @@ class GuitarTrainer {
             }
 
             if (guide) guide.style.display = 'block';
-          }
           } else if (isLandscape && nextM) {
             // V Landscape slícujeme X a Y bez nutnosti rotovat
             gestureMode = 'nudge-landscape';
