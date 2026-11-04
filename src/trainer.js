@@ -1701,12 +1701,15 @@ class GuitarTrainer {
         if (!meta) return;
         const ratio = meta.ratio || 1.0;
 
-        const diff = (this._nudgeStaffCenter1 - this._nudgeStaffCenter2) + curY;
+        const staffCenter1 = this._nudgeStaffCenter1 || 0;
+        const staffCenter2 = this._nudgeStaffCenter2 || 0;
+
+        const diff = (staffCenter1 - staffCenter2) + curY;
         const originY1 = Math.round((diff < 0 ? -diff : 0) * ratio);
         const originY2 = Math.round((diff > 0 ? diff : 0) * ratio);
         const originX2 = Math.max(10, Math.round((meta.m1.box.width + curX) * ratio));
 
-        const totalW = originX2 + Math.round(nextM.box.width * ratio);
+        const totalW = originX2 + this._nudgeM2Cache.width;
         const totalH = Math.max(originY1 + this._nudgeM1Cache.height, originY2 + this._nudgeM2Cache.height);
 
         if (this.labCanvas.width !== totalW || this.labCanvas.height !== totalH) {
@@ -1717,17 +1720,24 @@ class GuitarTrainer {
         this.labCtx.fillStyle = this._nudgePaperColor || '#f4f2ec';
         this.labCtx.fillRect(0, 0, totalW, totalH);
 
-        // Vykreslení s již narovnanými úhly
+        // Vykreslení 1. taktu s rotací z Portraitu
         this.labCtx.save();
-        this.labCtx.translate(0, originY1 + Math.round(this._nudgeStaffCenter1 * ratio));
-        if (curM.manualRotate) this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
-        this.labCtx.drawImage(this._nudgeM1Cache, 0, -Math.round(this._nudgeStaffCenter1 * ratio));
+        const p1Y = originY1 + Math.round(staffCenter1 * ratio);
+        this.labCtx.translate(0, p1Y);
+        if (curM.manualRotate) {
+          this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
+        }
+        this.labCtx.drawImage(this._nudgeM1Cache, 0, -Math.round(staffCenter1 * ratio));
         this.labCtx.restore();
 
+        // Vykreslení 2. taktu s rotací z Portraitu a posunem X a Y
         this.labCtx.save();
-        this.labCtx.translate(originX2, originY2 + Math.round(this._nudgeStaffCenter2 * ratio));
-        if (nextM.manualRotate) this.labCtx.rotate((nextM.manualRotate * Math.PI) / 180);
-        this.labCtx.drawImage(this._nudgeM2Cache, 0, -Math.round(this._nudgeStaffCenter2 * ratio));
+        const p2Y = originY2 + Math.round(staffCenter2 * ratio);
+        this.labCtx.translate(originX2, p2Y);
+        if (nextM.manualRotate) {
+          this.labCtx.rotate((nextM.manualRotate * Math.PI) / 180);
+        }
+        this.labCtx.drawImage(this._nudgeM2Cache, 0, -Math.round(staffCenter2 * ratio));
         this.labCtx.restore();
 
         if (badgeVal) {
@@ -1788,7 +1798,7 @@ class GuitarTrainer {
 
             if (guide) guide.style.display = 'block'; // Rozsvítí vodicí linku
           } else if (isLandscape && nextM) {
-            // V Landscape už pouze slícujeme X a Y bez nutnosti rotovat
+            // V Landscape slícujeme X a Y bez nutnosti rotovat
             gestureMode = 'nudge-landscape';
             startOffsetX = nextM.manualOffsetX || 0;
             startOffsetY = nextM.manualOffsetY || 0;
@@ -1797,15 +1807,46 @@ class GuitarTrainer {
             this._nudgeStaffCenter1 = getStaffCenterYInBox(curImg, curM.box);
             this._nudgeStaffCenter2 = getStaffCenterYInBox(nextImg, nextM.box);
 
-            const off1 = document.createElement('canvas');
-            off1.width = curM.box.width; off1.height = curM.box.height;
-            off1.getContext('2d').drawImage(curImg, curM.box.left, curM.box.top, curM.box.width, curM.box.height, 0, 0, curM.box.width, curM.box.height);
-            this._nudgeM1Cache = off1;
+            const ratio = this.labLayoutMeta?.ratio || 1.0;
+            const targetScale = ratio * 2.0;
 
-            const off2 = document.createElement('canvas');
-            off2.width = nextM.box.width; off2.height = nextM.box.height;
-            off2.getContext('2d').drawImage(nextImg, nextM.box.left, nextM.box.top, nextM.box.width, nextM.box.height, 0, 0, nextM.box.width, nextM.box.height);
-            this._nudgeM2Cache = off2;
+            if (this.currentScore?.isPdf && this.pdfDoc) {
+              // Pro PDF renderujeme ostré zvětšené výřezy s měřítkem ratio
+              const off1 = document.createElement('canvas');
+              off1.width = Math.round(curM.box.width * ratio);
+              off1.height = Math.round(curM.box.height * ratio);
+              const p1 = await this.pdfDoc.getPage(curM.page || 1);
+              await p1.render({
+                canvasContext: off1.getContext('2d'),
+                viewport: p1.getViewport({ scale: targetScale }),
+                transform: [1, 0, 0, 1, -Math.round(curM.box.left * ratio), -Math.round(curM.box.top * ratio)]
+              }).promise;
+              this._nudgeM1Cache = off1;
+
+              const off2 = document.createElement('canvas');
+              off2.width = Math.round(nextM.box.width * ratio);
+              off2.height = Math.round(nextM.box.height * ratio);
+              const p2 = await this.pdfDoc.getPage(nextM.page || 1);
+              await p2.render({
+                canvasContext: off2.getContext('2d'),
+                viewport: p2.getViewport({ scale: targetScale }),
+                transform: [1, 0, 0, 1, -Math.round(nextM.box.left * ratio), -Math.round(nextM.box.top * ratio)]
+              }).promise;
+              this._nudgeM2Cache = off2;
+            } else {
+              // Pro vyfocené noty
+              const off1 = document.createElement('canvas');
+              off1.width = curM.box.width;
+              off1.height = curM.box.height;
+              off1.getContext('2d').drawImage(curImg, curM.box.left, curM.box.top, curM.box.width, curM.box.height, 0, 0, curM.box.width, curM.box.height);
+              this._nudgeM1Cache = off1;
+
+              const off2 = document.createElement('canvas');
+              off2.width = nextM.box.width;
+              off2.height = nextM.box.height;
+              off2.getContext('2d').drawImage(nextImg, nextM.box.left, nextM.box.top, nextM.box.width, nextM.box.height, 0, 0, nextM.box.width, nextM.box.height);
+              this._nudgeM2Cache = off2;
+            }
           }
 
           if (gestureMode) {
@@ -1861,11 +1902,16 @@ class GuitarTrainer {
         if (nextM) {
           const moveDx = e.clientX - gestureStartX;
           const moveDy = e.clientY - gestureStartY;
-          const scale = this.labZoomScale || 1.0;
+          
+          // Započítáme měřítko displeje i poměr rozlišení taktu
+          const scale = (this.labZoomScale || 1.0);
 
           nextM.manualOffsetX = startOffsetX + Math.round(moveDx / scale);
           nextM.manualOffsetY = startOffsetY + Math.round(moveDy / scale);
-          if (!nudgeRafId) nudgeRafId = requestAnimationFrame(fastNudgeRender);
+
+          if (!nudgeRafId) {
+            nudgeRafId = requestAnimationFrame(fastNudgeRender);
+          }
         }
         return;
       }
