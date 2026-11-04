@@ -1787,7 +1787,7 @@ class GuitarTrainer {
           this._nudgePaperColor = this.samplePaperColorFromImage(curImg, curM.box);
 
           if (!isLandscape) {
-            // Bod 1: V Portraitu aktivujeme srovnání taktu do roviny podle linky
+            // V Portraitu: dlouhé podržení aktivuje rotaci (srovnání do roviny)
             gestureMode = 'rotate-portrait';
             startRotate = curM.manualRotate || 0;
 
@@ -1796,7 +1796,8 @@ class GuitarTrainer {
             off1.getContext('2d').drawImage(curImg, curM.box.left, curM.box.top, curM.box.width, curM.box.height, 0, 0, curM.box.width, curM.box.height);
             this._nudgeM1Cache = off1;
 
-            if (guide) guide.style.display = 'block'; // Rozsvítí vodicí linku
+            // Zobrazí vodicí středovou linku přesně podle požadavku
+            if (guide) guide.style.display = 'block';
           } else if (isLandscape && nextM) {
             // V Landscape slícujeme X a Y bez nutnosti rotovat
             gestureMode = 'nudge-landscape';
@@ -1889,9 +1890,13 @@ class GuitarTrainer {
         const curM = this.currentScore?.measures?.[this.labCurrentIndex];
         if (curM) {
           const moveDy = e.clientY - gestureStartY;
-          // Plynulý krok po 0.1°
           curM.manualRotate = Math.max(-15, Math.min(15, Math.round((startRotate + moveDy / 16) * 10) / 10));
-          if (!nudgeRafId) nudgeRafId = requestAnimationFrame(fastNudgeRender);
+
+          if (badgeVal) badgeVal.innerText = `∡ Rovina: ${curM.manualRotate >= 0 ? '+' : ''}${curM.manualRotate}°`;
+
+          if (!nudgeRafId) {
+            nudgeRafId = requestAnimationFrame(fastNudgeRender);
+          }
         }
         return;
       }
@@ -2366,7 +2371,7 @@ class GuitarTrainer {
     if (lens) lens.style.backgroundColor = paperColor;
     if (container) container.style.backgroundColor = paperColor;
 
-    // 1. KLÍČ & PŘEDZNAMENÁNÍ (vykreslujeme POUZE při změně taktu/klíče, ne při tažení prstem!)
+    // 1. KLÍČ & PŘEDZNAMENÁNÍ
     const keySig = this.getKeySignatureForMeasure(this.labCurrentIndex);
     const clefCacheKey = keySig ? `${keySig.id}_${curM.page || 1}_${paperColor}` : 'no_clef';
 
@@ -2422,8 +2427,7 @@ class GuitarTrainer {
     if (!this.labCanvas || !this.labCtx || !curImg) return;
 
     const isLandscape = window.innerWidth > window.innerHeight;
-    const showPair = isLandscape || (this.labTool === 'nudge');
-    const nextM = (showPair && this.labCurrentIndex + 1 < measures.length)
+    const nextM = (isLandscape && this.labCurrentIndex + 1 < measures.length)
       ? measures[this.labCurrentIndex + 1]
       : null;
 
@@ -2432,7 +2436,6 @@ class GuitarTrainer {
       if (nudgeBar) nudgeBar.style.display = 'none';
       if (ind) ind.innerText = `Takt #${curM.id}`;
 
-      // 1. ZÁKLADNÍ PŘÍPRAVA ROZMĚRŮ A PLÁTNA (jak tam máte dosud)
       if (this.currentScore?.isPdf && this.pdfDoc) {
         const pageNum = curM.page || 1;
         const page = await this.pdfDoc.getPage(pageNum);
@@ -2452,14 +2455,13 @@ class GuitarTrainer {
         this.labCtx.fillStyle = paperColor;
         this.labCtx.fillRect(0, 0, cropW, cropH);
 
-        // >>> SEM VLOŽIT ZAČÁTEK ROTACE <<<
-        if (curM.manualRotate) {
+        // Aplikace rotace kolem středu taktu v Portraitu
         this.labCtx.save();
-        const cx = this.labCanvas.width / 2;
-        const cy = this.labCanvas.height / 2;
+        const cx = cropW / 2;
+        const cy = cropH / 2;
         this.labCtx.translate(cx, cy);
-        this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
-        this.labCtx.translate(-cx, -cy);
+        if (curM.manualRotate) {
+          this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
         }
 
         const viewport = page.getViewport({ scale: targetScale });
@@ -2467,14 +2469,12 @@ class GuitarTrainer {
           await page.render({
             canvasContext: this.labCtx,
             viewport: viewport,
-            transform: [1, 0, 0, 1, -cropX, -cropY]
+            transform: [1, 0, 0, 1, -cropX - cx, -cropY - cy]
           }).promise;
         } catch (_) {}
 
-        // >>> SEM VLOŽIT KONEC ROTACE PRO PDF <<<
-        if (curM.manualRotate) {
-          this.labCtx.restore();
-        }
+        this.renderDrawingsForMeasure(this.labCtx, curM, -cx, -cy, ratio);
+        this.labCtx.restore();
 
       } else {
         // Vykreslení pro fotky:
@@ -2487,30 +2487,24 @@ class GuitarTrainer {
         this.labCtx.imageSmoothingEnabled = true;
         this.labCtx.imageSmoothingQuality = 'high';
 
-        // >>> SEM VLOŽIT ZAČÁTEK ROTACE PRO FOTKY <<<
+        // Aplikace rotace kolem středu taktu pro fotku
+        this.labCtx.save();
+        const cx = this.labCanvas.width / 2;
+        const cy = this.labCanvas.height / 2;
+        this.labCtx.translate(cx, cy);
         if (curM.manualRotate) {
-          this.labCtx.save();
-          const cx = this.labCanvas.width / 2;
-          const cy = this.labCanvas.height / 2;
-          this.labCtx.translate(cx, cy);
           this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
-          this.labCtx.translate(-cx, -cy);
         }
-
         this.labCtx.drawImage(
           curImg,
           curM.box.left, curM.box.top, curM.box.width, curM.box.height,
-          0, 0, curM.box.width, curM.box.height
+          -curM.box.width / 2, -curM.box.height / 2, curM.box.width, curM.box.height
         );
         this.enhanceMeasurePixels(this.labCtx, this.labCanvas.width, this.labCanvas.height);
-
-        // >>> SEM VLOŽIT KONEC ROTACE PRO FOTKY <<<
-        if (curM.manualRotate) {
-          this.labCtx.restore();
-        }
+        this.renderDrawingsForMeasure(this.labCtx, curM, -curM.box.width / 2, -curM.box.height / 2, 1.0);
+        this.labCtx.restore();
       }
 
-      this.renderDrawingsForMeasure(this.labCtx, curM, 0, 0, this.labLayoutMeta.ratio || 1.0);
     } else {
       // --- REŽIM 2 TAKTŮ (Landscape): KOREKCE SE ZAPOČTENÝM MIKRO-POSUNEM ---
       if (ind) ind.innerText = `Takty #${curM.id} - #${nextM.id}`;
@@ -2604,26 +2598,26 @@ class GuitarTrainer {
         this.labCtx.fillStyle = paperColor;
         this.labCtx.fillRect(0, 0, totalW_px, totalH_px);
 
-        // 1. LEVÝ TAKT (natočí se kolem středu své linky osnovy)
+        // 1. LEVÝ TAKT (s aplikací vlastního náklonu)
         this.labCtx.save();
-        const p1X = 0;
         const p1Y = posY1 + Math.round(staffCenter1 * ratio);
-        this.labCtx.translate(p1X, p1Y);
+        this.labCtx.translate(0, p1Y);
         if (curM.manualRotate) {
           this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
         }
         this.labCtx.drawImage(off1, 0, -Math.round(staffCenter1 * ratio));
+        this.renderDrawingsForMeasure(this.labCtx, curM, 0, -Math.round(staffCenter1 * ratio), ratio);
         this.labCtx.restore();
 
-        // 2. PRAVÝ TAKT (natočí se kolem středu své linky osnovy)
+        // 2. PRAVÝ TAKT (s aplikací vlastního náklonu)
         this.labCtx.save();
-        const p2X = splitX_px;
         const p2Y = posY2 + Math.round(staffCenter2 * ratio);
-        this.labCtx.translate(p2X, p2Y);
+        this.labCtx.translate(splitX_px, p2Y);
         if (nextM.manualRotate) {
           this.labCtx.rotate((nextM.manualRotate * Math.PI) / 180);
         }
         this.labCtx.drawImage(off2, 0, -Math.round(staffCenter2 * ratio));
+        this.renderDrawingsForMeasure(this.labCtx, nextM, 0, -Math.round(staffCenter2 * ratio), ratio);
         this.labCtx.restore();
 
       } else {
@@ -2646,11 +2640,10 @@ class GuitarTrainer {
         this.labCtx.imageSmoothingEnabled = true;
         this.labCtx.imageSmoothingQuality = 'high';
 
-        // 1. LEVÝ VYFOCENÝ TAKT (natočí se podle svého náklonu)
+        // 1. LEVÝ VYFOCENÝ TAKT
         this.labCtx.save();
-        const p1X = 0;
         const p1Y = originY1 + staffCenter1;
-        this.labCtx.translate(p1X, p1Y);
+        this.labCtx.translate(0, p1Y);
         if (curM.manualRotate) {
           this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
         }
@@ -2659,13 +2652,13 @@ class GuitarTrainer {
           curM.box.left, curM.box.top, curM.box.width, curM.box.height,
           0, -staffCenter1, curM.box.width, curM.box.height
         );
+        this.renderDrawingsForMeasure(this.labCtx, curM, 0, -staffCenter1, 1.0);
         this.labCtx.restore();
 
-        // 2. PRAVÝ VYFOCENÝ TAKT (natočí se podle svého náklonu)
+        // 2. PRAVÝ VYFOCENÝ TAKT
         this.labCtx.save();
-        const p2X = originX2;
         const p2Y = originY2 + staffCenter2;
-        this.labCtx.translate(p2X, p2Y);
+        this.labCtx.translate(originX2, p2Y);
         if (nextM.manualRotate) {
           this.labCtx.rotate((nextM.manualRotate * Math.PI) / 180);
         }
@@ -2674,13 +2667,12 @@ class GuitarTrainer {
           nextM.box.left, nextM.box.top, nextM.box.width, nextM.box.height,
           0, -staffCenter2, nextM.box.width, nextM.box.height
         );
+        this.renderDrawingsForMeasure(this.labCtx, nextM, 0, -staffCenter2, 1.0);
         this.labCtx.restore();
 
         this.enhanceMeasurePixels(this.labCtx, totalW, totalH);
       }
 
-      this.renderDrawingsForMeasure(this.labCtx, curM, 0, this.labLayoutMeta.originY1, this.labLayoutMeta.ratio || 1.0);
-      this.renderDrawingsForMeasure(this.labCtx, nextM, this.labLayoutMeta.x2, this.labLayoutMeta.originY2, this.labLayoutMeta.ratio || 1.0);
       // Oddělovací linka při přechodu z jiného řádku / strany
       const isDifferentRow = Math.abs(curM.box.top - nextM.box.top) > (curM.box.height * 0.40) ||
                              (curM.page || 1) !== (nextM.page || 1);
@@ -2699,7 +2691,7 @@ class GuitarTrainer {
     }
 
     if (this.labTool !== 'pan') {
-        this.drawMeasureBoundariesOverlay(this.labCtx);
+      this.drawMeasureBoundariesOverlay(this.labCtx);
     }
 
     if (autoFit) {
