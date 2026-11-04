@@ -273,6 +273,41 @@
         <div id="labNudgeBadge" class="lab-nudge-badge" style="display:none;">
           ✥ <span id="labNudgeBadgeVal">X: 0 px | Y: 0 px</span>
         </div>
+        <!-- PLOVOUCÍ OVLÁDACÍ PANEL PRO PŘESNÉ SROVNÁNÍ TAKTŮ -->
+        <div id="labNudgePanel" class="lab-nudge-panel" style="display:none;">
+          <div class="nudge-panel-header">
+            <span class="nudge-panel-title">✥ Srovnání taktů</span>
+            <span id="nudgeInfoText" class="nudge-info-val">X: 0 | Y: 0</span>
+          </div>
+
+          <div class="nudge-controls-grid">
+            <!-- Výška Y (srovnání linek osnovy) -->
+            <div class="nudge-btn-row">
+              <span class="nudge-axis-lbl">Výška (Y):</span>
+              <button class="nudge-step-btn" onclick="window.app.stepMeasureNudge(0, -1)" title="Posunout nahoru o 1 px">▲</button>
+              <button class="nudge-step-btn" onclick="window.app.stepMeasureNudge(0, 1)" title="Posunout dolů o 1 px">▼</button>
+              <button class="nudge-step-btn btn-step-fast" onclick="window.app.stepMeasureNudge(0, -5)">-5</button>
+              <button class="nudge-step-btn btn-step-fast" onclick="window.app.stepMeasureNudge(0, 5)">+5</button>
+            </div>
+
+            <!-- Mezera X (přiblížení / oddálení taktů) -->
+            <div class="nudge-btn-row">
+              <span class="nudge-axis-lbl">Mezera (X):</span>
+              <button class="nudge-step-btn" onclick="window.app.stepMeasureNudge(-1, 0)" title="Přiblížit doleva o 1 px">◀</button>
+              <button class="nudge-step-btn" onclick="window.app.stepMeasureNudge(1, 0)" title="Oddálit doprava o 1 px">▶</button>
+              <button class="nudge-step-btn btn-step-fast" onclick="window.app.stepMeasureNudge(-5, 0)">-5</button>
+              <button class="nudge-step-btn btn-step-fast" onclick="window.app.stepMeasureNudge(5, 0)">+5</button>
+            </div>
+
+            <!-- Sklon / rotace -->
+            <div class="nudge-btn-row">
+              <span class="nudge-axis-lbl">Sklon:</span>
+              <button class="nudge-step-btn" onclick="window.app.stepMeasureRotate(-0.5)" title="Pootočit vlevo o 0.5°">↺</button>
+              <button class="nudge-step-btn" onclick="window.app.stepMeasureRotate(0.5)" title="Pootočit vpravo o 0.5°">↻</button>
+              <button class="nudge-step-btn btn-nudge-reset" onclick="window.app.resetMeasureAlignment()" title="Vrátit do výchozího stavu">Reset</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -291,6 +326,11 @@
             <path d="M12 6.5L19.5 14" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round" opacity="0.8"/>
             <path d="M4 17.5L7.5 21" stroke="#be185d" stroke-width="2" stroke-linecap="round"/>
           </svg>
+        </button>
+
+        <!-- NOVÉ TLAČÍTKO PRO ROVNÁNÍ / LÍCOVÁNÍ TAKTŮ -->
+        <button class="draw-tool-btn" id="labToolNudgeBtn" onclick="window.app.toggleLabNudge()" title="Srovnat / lícovat takty">
+          ✥
         </button>
       </div>
 
