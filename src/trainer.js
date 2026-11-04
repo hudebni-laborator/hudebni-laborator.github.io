@@ -1643,6 +1643,7 @@ class GuitarTrainer {
     const lens = document.getElementById('rectLoupeLens');
     const badge = document.getElementById('labNudgeBadge');
     const badgeVal = document.getElementById('labNudgeBadgeVal');
+    const guide = document.getElementById('labAlignGuide');
     const reticle = document.getElementById('aimReticle');
     const triggerBtn = document.getElementById('penTriggerBtn');
     if (!lens || !this.labCanvas) return;
@@ -1652,15 +1653,11 @@ class GuitarTrainer {
     let initialPinchScale = 1.0;
     let isLabPanning = false;
 
-    // Dvouruční stav
-    this.isPenTriggerActive = false;
-    let currentLabStroke = null;
-    let currentLabTargetPage = null;
-    let currentAimHit = null;
-
-    // Proměnné pro lícování a rotaci
+    // Dotyková gesta a přepínání taktů
+    let touchStartTime = 0;
+    let touchStartPos = { x: 0, y: 0 };
     let longPressTimer = null;
-    let gestureMode = null; // null | 'nudge' | 'rotate-portrait' | 'rotate-landscape'
+    let gestureMode = null; // null | 'rotate-portrait' | 'nudge-landscape'
     let gestureStartX = 0;
     let gestureStartY = 0;
     let startOffsetX = 0;
@@ -1670,7 +1667,7 @@ class GuitarTrainer {
 
     const RETICLE_OFFSET_Y = 48;
 
-    // Bleskové překreslení mezipaměti na 60 FPS
+    // Rychlé vykreslení pro 60 FPS
     const fastNudgeRender = () => {
       nudgeRafId = null;
       if (!gestureMode || !this.labCtx) return;
@@ -1679,7 +1676,7 @@ class GuitarTrainer {
       const curM = measures[this.labCurrentIndex];
       const nextM = measures[this.labCurrentIndex + 1];
 
-      // 1. Rotace v Portrait kolem středu taktu
+      // 1. Živá rotace v Portraitu kolem středu
       if (gestureMode === 'rotate-portrait' && this._nudgeM1Cache) {
         const curRot = curM.manualRotate || 0;
         this.labCtx.fillStyle = this._nudgePaperColor || '#f4f2ec';
@@ -1692,15 +1689,14 @@ class GuitarTrainer {
         this.labCtx.drawImage(this._nudgeM1Cache, -this._nudgeM1Cache.width / 2, -this._nudgeM1Cache.height / 2);
         this.labCtx.restore();
 
-        if (badgeVal) badgeVal.innerText = `∡ Náklon: ${curRot >= 0 ? '+' : ''}${curRot}°`;
+        if (badgeVal) badgeVal.innerText = `∡ Rovina: ${curRot >= 0 ? '+' : ''}${curRot}°`;
         return;
       }
 
-      // 2. Lícování nebo rotace v Landscape
-      if ((gestureMode === 'nudge' || gestureMode === 'rotate-landscape') && this._nudgeM1Cache && this._nudgeM2Cache && nextM) {
+      // 2. Živé lícování X a Y v Landscape
+      if (gestureMode === 'nudge-landscape' && this._nudgeM1Cache && this._nudgeM2Cache && nextM) {
         const curX = nextM.manualOffsetX || 0;
         const curY = nextM.manualOffsetY || 0;
-        const curRot = nextM.manualRotate || 0;
         const meta = this.labLayoutMeta;
         if (!meta) return;
         const ratio = meta.ratio || 1.0;
@@ -1720,86 +1716,27 @@ class GuitarTrainer {
 
         this.labCtx.fillStyle = this._nudgePaperColor || '#f4f2ec';
         this.labCtx.fillRect(0, 0, totalW, totalH);
-        this.labCtx.drawImage(this._nudgeM1Cache, 0, originY1);
+
+        // Vykreslení s již narovnanými úhly
+        this.labCtx.save();
+        this.labCtx.translate(0, originY1 + Math.round(this._nudgeStaffCenter1 * ratio));
+        if (curM.manualRotate) this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
+        this.labCtx.drawImage(this._nudgeM1Cache, 0, -Math.round(this._nudgeStaffCenter1 * ratio));
+        this.labCtx.restore();
 
         this.labCtx.save();
-        const pivotX = originX2;
-        const pivotY = originY2 + Math.round(this._nudgeStaffCenter2 * ratio);
-        this.labCtx.translate(pivotX, pivotY);
-        if (curRot) {
-          this.labCtx.rotate((curRot * Math.PI) / 180);
-        }
+        this.labCtx.translate(originX2, originY2 + Math.round(this._nudgeStaffCenter2 * ratio));
+        if (nextM.manualRotate) this.labCtx.rotate((nextM.manualRotate * Math.PI) / 180);
         this.labCtx.drawImage(this._nudgeM2Cache, 0, -Math.round(this._nudgeStaffCenter2 * ratio));
         this.labCtx.restore();
 
         if (badgeVal) {
-          if (gestureMode === 'rotate-landscape') {
-            badgeVal.innerText = `∡ Náklon taktu: ${curRot >= 0 ? '+' : ''}${curRot}°`;
-          } else {
-            const xStr = curX >= 0 ? `+${curX}` : `${curX}`;
-            const yStr = curY >= 0 ? `+${curY}` : `${curY}`;
-            badgeVal.innerText = `✥ Lícování: X: ${xStr} px | Y: ${yStr} px`;
-          }
+          const xStr = curX >= 0 ? `+${curX}` : `${curX}`;
+          const yStr = curY >= 0 ? `+${curY}` : `${curY}`;
+          badgeVal.innerText = `✥ Lícování: X: ${xStr} px | Y: ${yStr} px`;
         }
       }
     };
-
-    // Tlačítko spoušť pro pero
-    if (triggerBtn) {
-      const startTrigger = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.isPenTriggerActive = true;
-        triggerBtn.classList.add('active-firing');
-        if (reticle) reticle.classList.add('is-firing');
-        if (navigator.vibrate) navigator.vibrate(25);
-
-        if (currentAimHit && (this.labTool === 'pen' || this.labTool === 'whiteout' || this.labTool === 'eraser')) {
-          if (this.labTool === 'eraser') {
-            this.eraseAt(currentAimHit.x, currentAimHit.y, currentAimHit.page);
-            this.showMeasureInLab(this.labCurrentIndex, false);
-          } else {
-            const curM = (currentAimHit.page === (this.labLayoutMeta?.m1.page || 1))
-              ? this.labLayoutMeta.m1 : this.labLayoutMeta.m2;
-            const strokeColor = (this.labTool === 'whiteout')
-              ? (this.samplePaperColorFromImage(this.pageCache.get(currentAimHit.page), curM?.box) || '#f4f2ec')
-              : this.penColor;
-            const strokeWidth = (this.labTool === 'whiteout') ? Math.max(16, this.penWidth * 4.5) : this.penWidth;
-
-            currentLabStroke = {
-              color: strokeColor,
-              width: strokeWidth,
-              points: [{ x: currentAimHit.x, y: currentAimHit.y }]
-            };
-            currentLabTargetPage = currentAimHit.page;
-            this.renderLiveLabStroke(currentLabStroke, currentLabTargetPage);
-          }
-        }
-      };
-
-      const stopTrigger = async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.isPenTriggerActive = false;
-        triggerBtn.classList.remove('active-firing');
-        if (reticle) reticle.classList.remove('is-firing');
-
-        if (currentLabStroke && currentLabTargetPage) {
-          const key = `page_${currentLabTargetPage}`;
-          if (!this.currentScore.drawings) this.currentScore.drawings = {};
-          if (!this.currentScore.drawings[key]) this.currentScore.drawings[key] = [];
-          this.currentScore.drawings[key].push(currentLabStroke);
-          await this.persistCurrentScore();
-          currentLabStroke = null;
-          currentLabTargetPage = null;
-          this.showMeasureInLab(this.labCurrentIndex, false);
-        }
-      };
-
-      triggerBtn.addEventListener('pointerdown', startTrigger);
-      triggerBtn.addEventListener('pointerup', stopTrigger);
-      triggerBtn.addEventListener('pointercancel', stopTrigger);
-    }
 
     lens.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
     lens.addEventListener('touchmove', e => { e.preventDefault(); }, { passive: false });
@@ -1807,10 +1744,9 @@ class GuitarTrainer {
     lens.addEventListener('pointerdown', e => {
       ongoingTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      // Režim kreslení
+      // Pokud kreslíme perem/bělítkem
       if (this.labTool !== 'pan') {
         const hit = this.labCanvasToPageCoords(e.clientX, e.clientY - RETICLE_OFFSET_Y);
-        currentAimHit = hit;
         if (reticle) {
           reticle.style.left = e.clientX + 'px';
           reticle.style.top = (e.clientY - RETICLE_OFFSET_Y) + 'px';
@@ -1821,18 +1757,17 @@ class GuitarTrainer {
         return;
       }
 
-      // Režim prohlížení s dlouhým podržením
       if (ongoingTouches.size === 1) {
+        touchStartTime = Date.now();
+        touchStartPos = { x: e.clientX, y: e.clientY };
         lens.setPointerCapture(e.pointerId);
 
+        // Časovač dlouhého stisku (400 ms) pro aktivaci lícování nebo rotace
         longPressTimer = setTimeout(async () => {
           const measures = this.currentScore?.measures || [];
           const curM = measures[this.labCurrentIndex];
           const nextM = measures[this.labCurrentIndex + 1];
           const isLandscape = window.innerWidth > window.innerHeight;
-
-          const rect = lens.getBoundingClientRect();
-          const canvasX = (e.clientX - rect.left - this.labPanX) / this.labZoomScale;
 
           gestureStartX = e.clientX;
           gestureStartY = e.clientY;
@@ -1842,7 +1777,7 @@ class GuitarTrainer {
           this._nudgePaperColor = this.samplePaperColorFromImage(curImg, curM.box);
 
           if (!isLandscape) {
-            // Bod 4: Dlouhé podržení v Portrait = rotace taktu kolem středu
+            // Bod 1: V Portraitu aktivujeme srovnání taktu do roviny podle linky
             gestureMode = 'rotate-portrait';
             startRotate = curM.manualRotate || 0;
 
@@ -1851,9 +1786,12 @@ class GuitarTrainer {
             off1.getContext('2d').drawImage(curImg, curM.box.left, curM.box.top, curM.box.width, curM.box.height, 0, 0, curM.box.width, curM.box.height);
             this._nudgeM1Cache = off1;
 
+            if (guide) guide.style.display = 'block'; // Rozsvítí vodicí linku
           } else if (isLandscape && nextM) {
-            const meta = this.labLayoutMeta;
-            const isLeftMeasure = meta && canvasX < meta.x2;
+            // V Landscape už pouze slícujeme X a Y bez nutnosti rotovat
+            gestureMode = 'nudge-landscape';
+            startOffsetX = nextM.manualOffsetX || 0;
+            startOffsetY = nextM.manualOffsetY || 0;
 
             const nextImg = await this.getPageImage(nextM.page || 1);
             this._nudgeStaffCenter1 = getStaffCenterYInBox(curImg, curM.box);
@@ -1868,21 +1806,10 @@ class GuitarTrainer {
             off2.width = nextM.box.width; off2.height = nextM.box.height;
             off2.getContext('2d').drawImage(nextImg, nextM.box.left, nextM.box.top, nextM.box.width, nextM.box.height, 0, 0, nextM.box.width, nextM.box.height);
             this._nudgeM2Cache = off2;
-
-            if (isLeftMeasure) {
-              // Bod 5: Dlouhé podržení levého taktu v Landscape = rotace pravého taktu
-              gestureMode = 'rotate-landscape';
-              startRotate = nextM.manualRotate || 0;
-            } else {
-              // Bod 2: Dlouhé podržení pravého taktu v Landscape = lícování posunem
-              gestureMode = 'nudge';
-              startOffsetX = nextM.manualOffsetX || 0;
-              startOffsetY = nextM.manualOffsetY || 0;
-            }
           }
 
           if (gestureMode) {
-            if (navigator.vibrate) navigator.vibrate(40);
+            if (navigator.vibrate) navigator.vibrate(35);
             if (badge) badge.style.display = 'block';
             fastNudgeRender();
           }
@@ -1906,72 +1833,44 @@ class GuitarTrainer {
       const dy = e.clientY - prev.y;
       ongoingTouches.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      // Zrušení časovače dlouhého stisku při posunu prstu dříve než uplyne 400 ms
+      // Zrušení dlouhého stisku při pohybu větším než 8 px
       if (longPressTimer) {
-        if (Math.hypot(dx, dy) > 3) {
+        if (Math.hypot(e.clientX - touchStartPos.x, e.clientY - touchStartPos.y) > 8) {
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
       }
 
-      // Kreslení se zaměřovačem
-      if (this.labTool !== 'pan') {
-        const hit = this.labCanvasToPageCoords(e.clientX, e.clientY - RETICLE_OFFSET_Y);
-        currentAimHit = hit;
-        if (reticle) {
-          reticle.style.left = e.clientX + 'px';
-          reticle.style.top = (e.clientY - RETICLE_OFFSET_Y) + 'px';
-          reticle.classList.toggle('out-of-bounds', !hit);
-        }
+      if (this.labTool !== 'pan') return;
 
-        if (this.isPenTriggerActive && hit) {
-          if (this.labTool === 'eraser') {
-            this.eraseAt(hit.x, hit.y, hit.page);
-            this.showMeasureInLab(this.labCurrentIndex, false);
-          } else if (currentLabStroke && hit.page === currentLabTargetPage) {
-            const newPt = this.filterStrokePoint(hit.x, hit.y, currentLabStroke);
-            if (newPt) {
-              currentLabStroke.points.push(newPt);
-              this.renderLiveLabStroke(currentLabStroke, currentLabTargetPage);
-            }
-          }
+      // 1. Posun prstu při rotaci v Portraitu
+      if (gestureMode === 'rotate-portrait') {
+        const curM = this.currentScore?.measures?.[this.labCurrentIndex];
+        if (curM) {
+          const moveDy = e.clientY - gestureStartY;
+          // Plynulý krok po 0.1°
+          curM.manualRotate = Math.max(-15, Math.min(15, Math.round((startRotate + moveDy / 16) * 10) / 10));
+          if (!nudgeRafId) nudgeRafId = requestAnimationFrame(fastNudgeRender);
         }
         return;
       }
 
-      // Bod 3: Hladké a přesné provádění lícování a rotace
-      if (gestureMode) {
-        const measures = this.currentScore?.measures || [];
-        const curM = measures[this.labCurrentIndex];
-        const nextM = measures[this.labCurrentIndex + 1];
-
-        if (gestureMode === 'nudge' && nextM) {
+      // 2. Posun prstu při lícování v Landscape
+      if (gestureMode === 'nudge-landscape') {
+        const nextM = this.currentScore?.measures?.[this.labCurrentIndex + 1];
+        if (nextM) {
           const moveDx = e.clientX - gestureStartX;
           const moveDy = e.clientY - gestureStartY;
-          const scale = (this.labZoomScale || 1.0);
+          const scale = this.labZoomScale || 1.0;
 
           nextM.manualOffsetX = startOffsetX + Math.round(moveDx / scale);
           nextM.manualOffsetY = startOffsetY + Math.round(moveDy / scale);
           if (!nudgeRafId) nudgeRafId = requestAnimationFrame(fastNudgeRender);
-          return;
         }
-
-        if (gestureMode === 'rotate-portrait' && curM) {
-          const moveDy = e.clientY - gestureStartY;
-          curM.manualRotate = Math.max(-15, Math.min(15, Math.round((startRotate + moveDy / 15) * 10) / 10));
-          if (!nudgeRafId) nudgeRafId = requestAnimationFrame(fastNudgeRender);
-          return;
-        }
-
-        if (gestureMode === 'rotate-landscape' && nextM) {
-          const moveDy = e.clientY - gestureStartY;
-          nextM.manualRotate = Math.max(-10, Math.min(10, Math.round((startRotate + moveDy / 18) * 10) / 10));
-          if (!nudgeRafId) nudgeRafId = requestAnimationFrame(fastNudgeRender);
-          return;
-        }
+        return;
       }
 
-      // Běžný zoom a posun plátna dvěma prsty
+      // Běžný zoom a posun
       if (ongoingTouches.size === 2) {
         const t = Array.from(ongoingTouches.values());
         const dist = Math.hypot(t[0].x - t[1].x, t[0].y - t[1].y);
@@ -1996,18 +1895,39 @@ class GuitarTrainer {
       }
     });
 
-    const finishPointer = async () => {
+    const finishPointer = async (e) => {
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-      if (reticle) reticle.style.display = 'none';
 
+      // Uložení stavu po gestu
       if (gestureMode) {
         gestureMode = null;
         if (nudgeRafId) { cancelAnimationFrame(nudgeRafId); nudgeRafId = null; }
         if (badge) badge.style.display = 'none';
+        if (guide) guide.style.display = 'none'; // Zhasne vodicí linku
         this._nudgeM1Cache = null;
         this._nudgeM2Cache = null;
         await this.persistCurrentScore();
         this.showMeasureInLab(this.labCurrentIndex, false);
+      } else {
+        // Bod 2: DETEKCE KRÁTKÉHO KLEPNUTÍ PRO PŘEPÍNÁNÍ TAKTU VLEVO / VPRAVO
+        const duration = Date.now() - touchStartTime;
+        const dist = Math.hypot(e.clientX - touchStartPos.x, e.clientY - touchStartPos.y);
+
+        if (duration < 280 && dist < 10 && this.labTool === 'pan') {
+          const rect = lens.getBoundingClientRect();
+          const relativeX = e.clientX - rect.left;
+
+          // Klepnutí v levé třetině = předchozí takt
+          if (relativeX < rect.width * 0.35) {
+            this.prevLabMeasure();
+            if (navigator.vibrate) navigator.vibrate(15);
+          }
+          // Klepnutí v pravé třetině = další takt
+          else if (relativeX > rect.width * 0.65) {
+            this.nextLabMeasure();
+            if (navigator.vibrate) navigator.vibrate(15);
+          }
+        }
       }
 
       ongoingTouches.clear();
@@ -2488,12 +2408,12 @@ class GuitarTrainer {
 
         // >>> SEM VLOŽIT ZAČÁTEK ROTACE <<<
         if (curM.manualRotate) {
-          this.labCtx.save();
-          const cx = cropW / 2;
-          const cy = cropH / 2;
-          this.labCtx.translate(cx, cy);
-          this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
-          this.labCtx.translate(-cx, -cy);
+        this.labCtx.save();
+        const cx = this.labCanvas.width / 2;
+        const cy = this.labCanvas.height / 2;
+        this.labCtx.translate(cx, cy);
+        this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
+        this.labCtx.translate(-cx, -cy);
         }
 
         const viewport = page.getViewport({ scale: targetScale });
@@ -2638,13 +2558,22 @@ class GuitarTrainer {
         this.labCtx.fillStyle = paperColor;
         this.labCtx.fillRect(0, 0, totalW_px, totalH_px);
 
-        this.labCtx.drawImage(off1, 0, posY1);
-
-        // VYKRESLENÍ 2. TAKTU S NÁKLONEM:
+        // 1. LEVÝ TAKT (natočí se kolem středu své linky osnovy)
         this.labCtx.save();
-        const pivotX = splitX_px;
-        const pivotY = posY2 + Math.round(staffCenter2 * ratio);
-        this.labCtx.translate(pivotX, pivotY);
+        const p1X = 0;
+        const p1Y = posY1 + Math.round(staffCenter1 * ratio);
+        this.labCtx.translate(p1X, p1Y);
+        if (curM.manualRotate) {
+          this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
+        }
+        this.labCtx.drawImage(off1, 0, -Math.round(staffCenter1 * ratio));
+        this.labCtx.restore();
+
+        // 2. PRAVÝ TAKT (natočí se kolem středu své linky osnovy)
+        this.labCtx.save();
+        const p2X = splitX_px;
+        const p2Y = posY2 + Math.round(staffCenter2 * ratio);
+        this.labCtx.translate(p2X, p2Y);
         if (nextM.manualRotate) {
           this.labCtx.rotate((nextM.manualRotate * Math.PI) / 180);
         }
@@ -2671,17 +2600,26 @@ class GuitarTrainer {
         this.labCtx.imageSmoothingEnabled = true;
         this.labCtx.imageSmoothingQuality = 'high';
 
+        // 1. LEVÝ VYFOCENÝ TAKT (natočí se podle svého náklonu)
+        this.labCtx.save();
+        const p1X = 0;
+        const p1Y = originY1 + staffCenter1;
+        this.labCtx.translate(p1X, p1Y);
+        if (curM.manualRotate) {
+          this.labCtx.rotate((curM.manualRotate * Math.PI) / 180);
+        }
         this.labCtx.drawImage(
           curImg,
           curM.box.left, curM.box.top, curM.box.width, curM.box.height,
-          0, originY1, curM.box.width, curM.box.height
+          0, -staffCenter1, curM.box.width, curM.box.height
         );
+        this.labCtx.restore();
 
-        // VYKRESLENÍ 2. TAKTU Z FOTKY S NÁKLONEM:
+        // 2. PRAVÝ VYFOCENÝ TAKT (natočí se podle svého náklonu)
         this.labCtx.save();
-        const pivotX = originX2;
-        const pivotY = originY2 + staffCenter2;
-        this.labCtx.translate(pivotX, pivotY);
+        const p2X = originX2;
+        const p2Y = originY2 + staffCenter2;
+        this.labCtx.translate(p2X, p2Y);
         if (nextM.manualRotate) {
           this.labCtx.rotate((nextM.manualRotate * Math.PI) / 180);
         }

@@ -512,3 +512,29 @@
     height: calc(100vh - 84px) !important;
   }
 }
+
+/* Vodorovná vodicí linka pro srovnání not v Portraitu */
+.lab-align-guide {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: #38bdf8;
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.8), 0 0 2px #ffffff;
+  pointer-events: none;
+  z-index: 60;
+  display: none;
+  transform: translateY(-50%);
+}
+
+.lab-align-guide::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  bottom: -6px;
+  width: 2px;
+  background: #38bdf8;
+  transform: translateX(-50%);
+}
