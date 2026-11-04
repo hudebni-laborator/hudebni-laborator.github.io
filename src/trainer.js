@@ -1903,8 +1903,8 @@ class GuitarTrainer {
           const moveDx = e.clientX - gestureStartX;
           const moveDy = e.clientY - gestureStartY;
           
-          // Započítáme měřítko displeje i poměr rozlišení taktu
-          const scale = (this.labZoomScale || 1.0);
+          const sensitivity = 4.0; 
+          const scale = (this.labZoomScale || 1.0) * sensitivity;
 
           nextM.manualOffsetX = startOffsetX + Math.round(moveDx / scale);
           nextM.manualOffsetY = startOffsetY + Math.round(moveDy / scale);
