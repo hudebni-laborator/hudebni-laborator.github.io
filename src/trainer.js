@@ -1791,13 +1791,31 @@ class GuitarTrainer {
             gestureMode = 'rotate-portrait';
             startRotate = curM.manualRotate || 0;
 
-            const off1 = document.createElement('canvas');
-            off1.width = curM.box.width; off1.height = curM.box.height;
-            off1.getContext('2d').drawImage(curImg, curM.box.left, curM.box.top, curM.box.width, curM.box.height, 0, 0, curM.box.width, curM.box.height);
-            this._nudgeM1Cache = off1;
+            const ratio = this.labLayoutMeta?.ratio || 1.0;
 
-            // Zobrazí vodicí středovou linku přesně podle požadavku
+            if (this.currentScore?.isPdf && this.pdfDoc) {
+              // Pro PDF připravíme ostré plátno ve stejném zvětšeném rozlišení ratio
+              const off1 = document.createElement('canvas');
+              off1.width = Math.round(curM.box.width * ratio);
+              off1.height = Math.round(curM.box.height * ratio);
+              const p1 = await this.pdfDoc.getPage(curM.page || 1);
+              await p1.render({
+                canvasContext: off1.getContext('2d'),
+                viewport: p1.getViewport({ scale: ratio * 2.0 }),
+                transform: [1, 0, 0, 1, -Math.round(curM.box.left * ratio), -Math.round(curM.box.top * ratio)]
+              }).promise;
+              this._nudgeM1Cache = off1;
+            } else {
+              // Pro vyfocené noty
+              const off1 = document.createElement('canvas');
+              off1.width = curM.box.width;
+              off1.height = curM.box.height;
+              off1.getContext('2d').drawImage(curImg, curM.box.left, curM.box.top, curM.box.width, curM.box.height, 0, 0, curM.box.width, curM.box.height);
+              this._nudgeM1Cache = off1;
+            }
+
             if (guide) guide.style.display = 'block';
+          }
           } else if (isLandscape && nextM) {
             // V Landscape slícujeme X a Y bez nutnosti rotovat
             gestureMode = 'nudge-landscape';
@@ -1907,9 +1925,11 @@ class GuitarTrainer {
         if (nextM) {
           const moveDx = e.clientX - gestureStartX;
           const moveDy = e.clientY - gestureStartY;
-          
-          const sensitivity = 8.0; 
-          const scale = (this.labZoomScale || 1.0) * sensitivity;
+
+          // ratio zohlední vysoké rozlišení PDF (u fotek je 1.0, u PDF např. 3.0)
+          const ratio = this.labLayoutMeta?.ratio || 1.0;
+          const sensitivity = 2.0; // tlumicí koeficient pro jemný a klidný posun
+          const scale = (this.labZoomScale || 1.0) * ratio * sensitivity;
 
           nextM.manualOffsetX = startOffsetX + Math.round(moveDx / scale);
           nextM.manualOffsetY = startOffsetY + Math.round(moveDy / scale);
