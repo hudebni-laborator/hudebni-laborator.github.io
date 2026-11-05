@@ -1,20 +1,3 @@
-const LAB_LEADIN_ORDINAL_COUNTS = [
-  ['prv', 'ní'], ['dru', 'há'], ['tře', 'tí'], ['čtvr', 'tá'],
-  ['pá', 'tá'], ['šes', 'tá'], ['sed', 'má'], ['os', 'má'],
-  ['de', 'vá', 'tá'], ['de', 'sá', 'tá'], ['je', 'den', 'nác', 'tá'],
-  ['dva', 'nác', 'tá'], ['tři', 'nác', 'tá'], ['čtr', 'nác', 'tá'],
-  ['pat', 'nác', 'tá'], ['šest', 'nác', 'tá']
-];
-const LAB_LEADIN_QUICK_COUNTS = [
-  ['raz'], ['dva'], ['tři'], ['čtyř'], ['pět'], ['šest'], ['sedm'], ['osm'],
-  ['de', 'vět'], ['de', 'set'], ['je', 'den', 'náct'], ['dva', 'náct'],
-  ['tři', 'náct'], ['čtr', 'náct'], ['pat', 'náct'], ['šest', 'náct']
-];
-const LAB_LEADIN_SAMPLE_KEYS = [...new Set([
-  ...LAB_LEADIN_ORDINAL_COUNTS.flat(),
-  ...LAB_LEADIN_QUICK_COUNTS.flat()
-])];
-
 class MetronomeController {
   constructor() {
     this.audioCtx = null;
@@ -26,14 +9,6 @@ class MetronomeController {
     // ==========================================================
     this.soundType = 'woodblock'; // 'woodblock', 'beep', 'click', 'rimshot'
     this.accentEnabled = true;
-    this.spokenCountEnabled = true;
-    this.leadInBuffers = new Map();
-    this.stretchedLeadInBuffers = new Map();
-    this.leadInSources = new Set();
-    this.leadInRecorder = null;
-    this.leadInRecordingKey = null;
-    this.leadInRecordingChunks = [];
-
     // ==========================================================
     // SAMOSTATNÉ PARAMETRY PRO REŽIM HRANÍ
     // ==========================================================
@@ -71,354 +46,6 @@ class MetronomeController {
   async initAudio() {
     if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
-  }
-
-  cancelSpokenCount() {
-    for (const source of this.leadInSources) {
-      try { source.stop(); } catch (_) {}
-    }
-    this.leadInSources.clear();
-  }
-
-  getLeadInSyllables(beatIndex, bpm) {
-    const counts = bpm >= 120 ? LAB_LEADIN_QUICK_COUNTS : LAB_LEADIN_ORDINAL_COUNTS;
-    return counts[beatIndex] || [];
-  }
-
-  async loadLeadInBuffers() {
-    const recordings = await window.scoreDB.getAllMetronomeAudio();
-    this.leadInBuffers.clear();
-    this.stretchedLeadInBuffers.clear();
-    for (const { id, blob } of recordings) {
-      try {
-        const decoded = await this.audioCtx.decodeAudioData(await blob.arrayBuffer());
-        this.leadInBuffers.set(id, this.trimLeadInBuffer(decoded));
-      } catch (error) {
-        console.error(`Nepodařilo se načíst nahrávku slabiky „${id}“:`, error);
-        throw new Error(`Nahrávku slabiky „${id}“ nelze přehrát.`);
-      }
-    }
-  }
-
-  trimLeadInBuffer(buffer) {
-    const threshold = 0.003;
-    let firstSound = buffer.length;
-    let lastSound = 0;
-    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-      const samples = buffer.getChannelData(channel);
-      for (let i = 0; i < samples.length; i++) {
-        if (Math.abs(samples[i]) >= threshold) {
-          firstSound = Math.min(firstSound, i);
-          lastSound = Math.max(lastSound, i);
-        }
-      }
-    }
-    if (firstSound === buffer.length) return { buffer, onsetOffset: 0 };
-
-    const paddingStart = Math.round(buffer.sampleRate * 0.015);
-    const paddingEnd = Math.round(buffer.sampleRate * 0.04);
-    const start = Math.max(0, firstSound - paddingStart);
-    const end = Math.min(buffer.length, lastSound + paddingEnd);
-    const trimmed = this.audioCtx.createBuffer(buffer.numberOfChannels, end - start, buffer.sampleRate);
-    for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
-      trimmed.copyToChannel(buffer.getChannelData(channel).subarray(start, end), channel);
-    }
-    return { buffer: trimmed, onsetOffset: (firstSound - start) / buffer.sampleRate };
-  }
-
-  stretchLeadInBuffer(sample, duration) {
-    // Overlap and align short grains to change duration without resampling the speaker's pitch.
-    const input = sample.buffer;
-    const sampleRate = input.sampleRate;
-    const outputLength = Math.max(1, Math.round(duration * sampleRate));
-    const speed = input.duration / duration;
-    if (speed <= 1) return sample;
-
-    const windowSize = Math.max(2, Math.min(
-      Math.round(sampleRate * 0.04),
-      input.length,
-      outputLength
-    ));
-    const outputHop = Math.max(1, Math.floor(windowSize / 2));
-    const searchRadius = Math.min(Math.floor(outputHop / 2), Math.round(sampleRate * 0.004));
-    const sourceChannels = Array.from({ length: input.numberOfChannels }, (_, channel) => input.getChannelData(channel));
-    const outputChannels = sourceChannels.map(() => new Float32Array(outputLength));
-    const weights = new Float32Array(outputLength);
-    const window = Float32Array.from(
-      { length: windowSize },
-      (_, index) => 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (windowSize - 1))
-    );
-    const monoAt = (index, channels = sourceChannels) => {
-      let sum = 0;
-      for (const channel of channels) sum += channel[index] || 0;
-      return sum / channels.length;
-    };
-
-    for (let outputStart = 0; outputStart < outputLength; outputStart += outputHop) {
-      const expectedInputStart = Math.min(
-        input.length - windowSize,
-        Math.round(outputStart * speed)
-      );
-      let inputStart = Math.max(0, expectedInputStart);
-
-      if (outputStart > 0 && searchRadius > 0) {
-        const overlapLength = Math.min(outputHop, outputLength - outputStart);
-        let bestCorrelation = -Infinity;
-        const minCandidate = Math.max(0, expectedInputStart - searchRadius);
-        const maxCandidate = Math.min(input.length - windowSize, expectedInputStart + searchRadius);
-
-        for (let candidate = minCandidate; candidate <= maxCandidate; candidate++) {
-          let correlation = 0;
-          let sourceEnergy = 0;
-          let outputEnergy = 0;
-          for (let index = 0; index < overlapLength; index++) {
-            const outputIndex = outputStart + index;
-            const priorWeight = weights[outputIndex];
-            if (!priorWeight) continue;
-            const sourceValue = monoAt(candidate + index);
-            const outputValue = monoAt(outputIndex, outputChannels) / priorWeight;
-            correlation += sourceValue * outputValue;
-            sourceEnergy += sourceValue * sourceValue;
-            outputEnergy += outputValue * outputValue;
-          }
-          const normalizedCorrelation = correlation / Math.sqrt(sourceEnergy * outputEnergy || 1);
-          if (normalizedCorrelation > bestCorrelation) {
-            bestCorrelation = normalizedCorrelation;
-            inputStart = candidate;
-          }
-        }
-      }
-
-      const frameLength = Math.min(windowSize, outputLength - outputStart, input.length - inputStart);
-      for (let index = 0; index < frameLength; index++) {
-        const weight = window[index];
-        const outputIndex = outputStart + index;
-        weights[outputIndex] += weight;
-        for (let channel = 0; channel < sourceChannels.length; channel++) {
-          outputChannels[channel][outputIndex] += sourceChannels[channel][inputStart + index] * weight;
-        }
-      }
-    }
-
-    const stretched = this.audioCtx.createBuffer(input.numberOfChannels, outputLength, sampleRate);
-    for (let channel = 0; channel < outputChannels.length; channel++) {
-      for (let index = 0; index < outputLength; index++) {
-        if (weights[index]) outputChannels[channel][index] /= weights[index];
-      }
-      stretched.copyToChannel(outputChannels[channel], channel);
-    }
-
-    return { buffer: stretched, onsetOffset: sample.onsetOffset / speed };
-  }
-
-  scheduleLeadInSyllables(beatIndex, bpm, time) {
-    const syllables = this.getLeadInSyllables(beatIndex, bpm);
-    if (!syllables.length || syllables.some(syllable => !this.leadInBuffers.has(syllable))) return false;
-
-    const syllableInterval = (60 / bpm) / syllables.length;
-    syllables.forEach((syllable, index) => {
-      const originalSample = this.leadInBuffers.get(syllable);
-      const cacheKey = `${syllable}:${Math.round(syllableInterval * 1000)}`;
-      let sample = this.stretchedLeadInBuffers.get(cacheKey);
-      if (!sample) {
-        sample = this.stretchLeadInBuffer(originalSample, syllableInterval);
-        if (this.stretchedLeadInBuffers.size >= 256) this.stretchedLeadInBuffers.clear();
-        this.stretchedLeadInBuffers.set(cacheKey, sample);
-      }
-      const buffer = sample.buffer;
-      const source = this.audioCtx.createBufferSource();
-      source.buffer = buffer;
-      source.connect(this.audioCtx.destination);
-      source.onended = () => this.leadInSources.delete(source);
-      this.leadInSources.add(source);
-      const syllableTime = time + index * syllableInterval;
-      const startTime = syllableTime - sample.onsetOffset;
-      source.start(startTime);
-      source.stop(syllableTime + syllableInterval);
-    });
-    return true;
-  }
-
-  async openLeadInRecorder() {
-    const modal = document.getElementById('spokenCountModal');
-    if (!modal) return;
-    modal.style.display = 'flex';
-    try {
-      await this.renderLeadInRecorder();
-    } catch (error) {
-      console.error('Načtení nahrávek slabik selhalo:', error);
-      this.setLeadInRecordingStatus('Nahrávky se nepodařilo načíst z úložiště zařízení.', true);
-    }
-  }
-
-  closeLeadInRecorder() {
-    if (this.leadInRecorder?.state === 'recording') this.stopLeadInRecording();
-    const modal = document.getElementById('spokenCountModal');
-    if (modal) modal.style.display = 'none';
-  }
-
-  async renderLeadInRecorder() {
-    const list = document.getElementById('spokenCountRecordList');
-    if (!list) return;
-    const recordings = await window.scoreDB.getAllMetronomeAudio();
-    const savedKeys = new Set(recordings.map(recording => recording.id));
-    const status = document.getElementById('spokenCountRecordStatus');
-    if (status) {
-      status.innerText = `Nahráno ${savedKeys.size} z ${LAB_LEADIN_SAMPLE_KEYS.length} slabik.`;
-      status.classList.remove('error');
-    }
-
-    list.replaceChildren();
-    for (const key of LAB_LEADIN_SAMPLE_KEYS) {
-      const row = document.createElement('div');
-      row.className = 'spoken-count-syllable-row';
-
-      const label = document.createElement('span');
-      label.className = 'spoken-count-syllable-label';
-      label.innerText = key;
-      row.appendChild(label);
-
-      const recordButton = document.createElement('button');
-      recordButton.className = 'pill-btn';
-      const isRecording = this.leadInRecordingKey === key;
-      recordButton.innerText = isRecording ? '⏹ Zastavit' : '🎙 Nahrát';
-      recordButton.setAttribute('aria-label', `${isRecording ? 'Zastavit' : 'Nahrát'} slabiku ${key}`);
-      recordButton.onclick = () => isRecording ? this.stopLeadInRecording() : this.startLeadInRecording(key);
-      row.appendChild(recordButton);
-
-      const playButton = document.createElement('button');
-      playButton.className = 'pill-btn';
-      playButton.innerText = '▶';
-      playButton.setAttribute('aria-label', `Přehrát slabiku ${key}`);
-      playButton.disabled = !savedKeys.has(key);
-      playButton.onclick = () => this.previewLeadInSyllable(key);
-      row.appendChild(playButton);
-
-      const deleteButton = document.createElement('button');
-      deleteButton.className = 'pill-btn';
-      deleteButton.innerText = '✕';
-      deleteButton.setAttribute('aria-label', `Smazat nahrávku slabiky ${key}`);
-      deleteButton.disabled = !savedKeys.has(key);
-      deleteButton.onclick = () => this.deleteLeadInSyllable(key);
-      row.appendChild(deleteButton);
-      list.appendChild(row);
-    }
-  }
-
-  setLeadInRecordingStatus(message, isError = false) {
-    const status = document.getElementById('spokenCountRecordStatus');
-    if (!status) return;
-    status.innerText = message;
-    status.classList.toggle('error', isError);
-  }
-
-  async startLeadInRecording(key) {
-    if (this.leadInRecorder?.state === 'recording') return;
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      this.setLeadInRecordingStatus('Nahrávání vyžaduje podporu mikrofonu v zabezpečeném připojení.', true);
-      return;
-    }
-
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      let recordingFailed = false;
-      this.leadInRecorder = recorder;
-      this.leadInRecordingKey = key;
-      this.leadInRecordingChunks = [];
-      recorder.ondataavailable = event => {
-        if (event.data.size) this.leadInRecordingChunks.push(event.data);
-      };
-      recorder.onerror = event => {
-        recordingFailed = true;
-        console.error('Nahrávání slabiky selhalo:', event.error);
-        this.setLeadInRecordingStatus('Nahrávání selhalo. Zkontrolujte oprávnění mikrofonu.', true);
-      };
-      recorder.onstop = async () => {
-        stream.getTracks().forEach(track => track.stop());
-        const blob = new Blob(this.leadInRecordingChunks, { type: recorder.mimeType || 'audio/webm' });
-        this.leadInRecorder = null;
-        this.leadInRecordingKey = null;
-        this.leadInRecordingChunks = [];
-        if (recordingFailed) {
-          this.setLeadInRecordingStatus('Nahrávání selhalo. Zkuste slabiku nahrát znovu.', true);
-          await this.renderLeadInRecorder();
-          return;
-        }
-        if (!blob.size) {
-          this.setLeadInRecordingStatus('Nahrávka je prázdná. Zkuste slabiku nahrát znovu.', true);
-          await this.renderLeadInRecorder();
-          return;
-        }
-        try {
-          const decoded = this.audioCtx
-            ? this.trimLeadInBuffer(await this.audioCtx.decodeAudioData(await blob.arrayBuffer()))
-            : null;
-          await window.scoreDB.saveMetronomeAudio(key, blob);
-          if (decoded) {
-            this.leadInBuffers.set(key, decoded);
-          } else {
-            this.leadInBuffers.delete(key);
-          }
-          this.stretchedLeadInBuffers.clear();
-          this.setLeadInRecordingStatus(`Slabika „${key}“ uložena do tohoto zařízení.`);
-          await this.renderLeadInRecorder();
-        } catch (error) {
-          console.error('Uložení nahrávky slabiky selhalo:', error);
-          this.setLeadInRecordingStatus('Nahrávku se nepodařilo uložit do zařízení.', true);
-          await this.renderLeadInRecorder();
-        }
-      };
-      recorder.start();
-      this.setLeadInRecordingStatus(`Nahrává se „${key}“. Vyslovte slabiku a stiskněte Zastavit.`);
-      await this.renderLeadInRecorder().catch(error => {
-        console.error('Obnovení seznamu slabik selhalo:', error);
-      });
-    } catch (error) {
-      stream?.getTracks().forEach(track => track.stop());
-      this.leadInRecorder = null;
-      this.leadInRecordingKey = null;
-      this.leadInRecordingChunks = [];
-      console.error('Přístup k mikrofonu selhal:', error);
-      this.setLeadInRecordingStatus('Nelze použít mikrofon. Povolte aplikaci přístup k mikrofonu.', true);
-    }
-  }
-
-  stopLeadInRecording() {
-    if (this.leadInRecorder?.state === 'recording') this.leadInRecorder.stop();
-  }
-
-  async previewLeadInSyllable(key) {
-    try {
-      let sample = this.leadInBuffers.get(key);
-      if (!sample) {
-        await this.initAudio();
-        const recording = (await window.scoreDB.getAllMetronomeAudio()).find(item => item.id === key);
-        if (!recording) return;
-        sample = this.trimLeadInBuffer(await this.audioCtx.decodeAudioData(await recording.blob.arrayBuffer()));
-        this.leadInBuffers.set(key, sample);
-      }
-      const source = this.audioCtx.createBufferSource();
-      source.buffer = sample.buffer;
-      source.connect(this.audioCtx.destination);
-      source.start(this.audioCtx.currentTime + 0.02);
-    } catch (error) {
-      console.error(`Přehrání slabiky „${key}“ selhalo:`, error);
-      this.setLeadInRecordingStatus(`Nahrávku slabiky „${key}“ se nepodařilo přehrát.`, true);
-    }
-  }
-
-  async deleteLeadInSyllable(key) {
-    try {
-      await window.scoreDB.deleteMetronomeAudio(key);
-      this.leadInBuffers.delete(key);
-      this.stretchedLeadInBuffers.clear();
-      await this.renderLeadInRecorder();
-    } catch (error) {
-      console.error(`Smazání slabiky „${key}“ selhalo:`, error);
-      this.setLeadInRecordingStatus(`Nahrávku slabiky „${key}“ se nepodařilo smazat.`, true);
-    }
   }
 
   detectCurrentMode() {
@@ -548,21 +175,11 @@ class MetronomeController {
 
   async start() {
     await this.initAudio();
-    this.cancelSpokenCount();
-    this.leadInBuffers.clear();
     if (window.wakeLockManager) {
       try { await window.wakeLockManager.request(); } catch (_) {}
     }
 
     this.activeMode = this.detectCurrentMode();
-    if (this.activeMode === 'lab' && this.spokenCountEnabled) {
-      try {
-        await this.loadLeadInBuffers();
-      } catch (error) {
-        console.error('Načtení hlasových nahrávek selhalo:', error);
-        alert(`${error?.message || error} Běh metronomu bude pokračovat hlasem zařízení.`);
-      }
-    }
     this.isRunning = true;
     this.beatIndex = 0;
     this.measureIndexInCycle = 0;
@@ -600,7 +217,6 @@ class MetronomeController {
 
   stop() {
     this.isRunning = false;
-    this.cancelSpokenCount();
     if (this.timerId) clearInterval(this.timerId);
     this.timerId = null;
     this.phase = 'idle';
@@ -754,7 +370,6 @@ class MetronomeController {
   }
 
   resetLabDrill() {
-    this.cancelSpokenCount();
     this.currentBpm = this.labStartBpm;
     this.measureIndexInCycle = 0;
     this.beatIndex = 0;
@@ -929,25 +544,6 @@ class MetronomeController {
     this.playClickSound(this.audioCtx.currentTime + 0.05, this.accentEnabled, false);
   }
 
-  async toggleSpokenCount() {
-    if (this.spokenCountEnabled) {
-      this.spokenCountEnabled = false;
-      this.cancelSpokenCount();
-    } else {
-      if (this.isRunning && this.activeMode === 'lab') {
-        try {
-          await this.loadLeadInBuffers();
-        } catch (error) {
-          console.error('Načtení hlasových nahrávek selhalo:', error);
-          alert(`${error?.message || error} Hlasové počítání zůstává vypnuté.`);
-          return;
-        }
-      }
-      this.spokenCountEnabled = true;
-    }
-    this.updateSheetSelectors();
-  }
-
   updateLabSummaryUI() {
     const startTxt = `Start: ${this.labStartBpm}`;
     const targetTxt = `🎯 Cíl: ${this.labTargetBpm}`;
@@ -999,12 +595,6 @@ class MetronomeController {
       accBtn.innerText = this.accentEnabled ? '🔔 Akcent ZAP' : '🔕 Bez akcentu';
       accBtn.classList.toggle('active', this.accentEnabled);
     }
-    const spokenCountBtn = document.getElementById('sheetSpokenCountBtn');
-    if (spokenCountBtn) {
-      spokenCountBtn.innerText = this.spokenCountEnabled ? '🗣 Počítání ZAP' : '🔇 Počítání VYP';
-      spokenCountBtn.classList.toggle('active', this.spokenCountEnabled);
-      spokenCountBtn.setAttribute('aria-pressed', String(this.spokenCountEnabled));
-    }
   }
 
   // ==========================================================
@@ -1027,23 +617,12 @@ class MetronomeController {
     const scheduledBpm = this.currentBpm;
 
     this.playClickSound(time, isAccent, scheduledPhase === 'leadin');
-    if (
-      this.activeMode === 'lab'
-      && scheduledPhase === 'leadin'
-      && this.spokenCountEnabled
-    ) {
-      this.scheduleLeadInSyllables(scheduledBeat, scheduledBpm, time);
-    }
-
     const delayMs = Math.max(0, (time - this.audioCtx.currentTime) * 1000);
     setTimeout(() => {
       if (!this.isRunning && scheduledPhase !== 'goal') return;
 
       if (this.activeMode === 'lab') {
         this.renderBeatLight(scheduledBeat, beatsPerBar, scheduledPhase);
-        if (scheduledPhase === 'playing' && scheduledBeat === 0) {
-          this.cancelSpokenCount();
-        }
         if (scheduledBeat === 0) {
           this.updateCircleUI(scheduledPhase);
           this.updateLabTempoUI(scheduledBpm);

@@ -464,18 +464,7 @@
         <button id="sheetAccentBtn" class="pill-btn active" onclick="window.app.metronome.toggleAccent()">🔔 Akcent ZAP</button>
       </div>
 
-      <!-- 5. HLASOVÉ POČÍTÁNÍ PŘÍPRAVNÉHO TAKTU -->
-      <div class="selector-row">
-        <span class="selector-label">Hlasové počítání:</span>
-        <button id="sheetSpokenCountBtn" class="pill-btn active" aria-pressed="true" onclick="window.app.metronome.toggleSpokenCount()">🗣 Počítání ZAP</button>
-      </div>
-
-      <div class="selector-row">
-        <span class="selector-label">Vlastní hlas:</span>
-        <button class="pill-btn" onclick="window.app.metronome.openLeadInRecorder()">🎙 Nahrát slabiky</button>
-      </div>
-
-      <!-- 6. VOLBA DOB (METRUM) -->
+      <!-- 5. VOLBA DOB (METRUM) -->
       <div class="selector-row">
         <span class="selector-label">Metrum (doby):</span>
         <div class="pill-group" id="beatsPillGroup">
@@ -487,7 +476,7 @@
         </div>
       </div>
 
-      <!-- 7. ZRYCHLENÍ PO TAKTECH (STEPPER) -->
+      <!-- 6. ZRYCHLENÍ PO TAKTECH (STEPPER) -->
       <div class="selector-row">
         <span class="selector-label">Zrychlit po:</span>
         <div class="stepper-wrap">
@@ -497,7 +486,7 @@
         </div>
       </div>
 
-      <!-- 8. ZRYCHLENÍ O (KROK) -->
+      <!-- 7. ZRYCHLENÍ O (KROK) -->
       <div class="selector-row">
         <span class="selector-label">Zrychlení o:</span>
         <div class="pill-group" id="stepPillGroup">
@@ -508,19 +497,6 @@
           <button class="pill-btn" onclick="window.app.metronome.setStepBpm(5)">+5</button>
         </div>
       </div>
-    </div>
-  </div>
-
-  <div id="spokenCountModal" class="metro-sheet-backdrop" style="display:none;" onclick="if(event.target===this) window.app.metronome.closeLeadInRecorder()">
-    <div class="metro-sheet-card spoken-count-card">
-      <div class="sheet-drag-handle"></div>
-      <div class="sheet-header">
-        <span class="sheet-title">Nahrát vlastní hlas</span>
-        <button class="sheet-close-btn" onclick="window.app.metronome.closeLeadInRecorder()">✕</button>
-      </div>
-      <p class="spoken-count-help">Nahrávejte každou slabiku zvlášť, krátce a bez dlouhého ticha. Pro 4/4 stačí prvních 8 slabik pro běžné tempo a „raz, dva, tři, čtyř“ pro rychlé. Používají se pouze vaše nahrávky; chybějící slabiky zůstanou bez hlasu. Nahrávky zůstanou jen v tomto zařízení a přehrají se přesně na dobu a její díly.</p>
-      <p id="spokenCountRecordStatus" class="spoken-count-status" aria-live="polite"></p>
-      <div id="spokenCountRecordList" class="spoken-count-syllable-list"></div>
     </div>
   </div>
 
