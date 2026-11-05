@@ -1622,6 +1622,10 @@ class GuitarTrainer {
     }
   }
 
+  getLabViewStatePrefix() {
+    return window.innerWidth > window.innerHeight ? 'labLandscape' : 'labPortrait';
+  }
+
   fitLabCanvas() {
     const lens = document.getElementById('rectLoupeLens');
     if (!lens || !this.labCanvas || this.labCanvas.width === 0 || this.labCanvas.height === 0) return;
@@ -1639,16 +1643,22 @@ class GuitarTrainer {
 
     this.labFitZoomScale = Math.min(scaleX, scaleY);
     const measure = this.currentScore?.measures?.[this.labCurrentIndex];
-    const savedZoomFactor = Number.isFinite(measure?.labZoomFactor) && measure.labZoomFactor > 0
-      ? measure.labZoomFactor
+    const statePrefix = this.getLabViewStatePrefix();
+    const legacyPortraitState = statePrefix === 'labPortrait';
+    const savedZoom = measure?.[`${statePrefix}ZoomFactor`]
+      ?? (legacyPortraitState ? measure?.labZoomFactor : undefined);
+    const savedZoomFactor = Number.isFinite(savedZoom) && savedZoom > 0
+      ? savedZoom
       : 1;
     this.labZoomScale = Math.max(0.2, Math.min(5.0, this.labFitZoomScale * savedZoomFactor));
     const centeredPanX = (w - this.labCanvas.width * this.labZoomScale) / 2;
     const centeredPanY = (h - this.labCanvas.height * this.labZoomScale) / 2;
-    const savedPanOffsetX = Number.isFinite(measure?.labPanOffsetX) ? measure.labPanOffsetX : 0;
-    const savedPanOffsetY = Number.isFinite(measure?.labPanOffsetY) ? measure.labPanOffsetY : 0;
-    this.labPanX = Math.round(centeredPanX + savedPanOffsetX * w);
-    this.labPanY = Math.round(centeredPanY + savedPanOffsetY * h);
+    const savedPanOffsetX = measure?.[`${statePrefix}PanOffsetX`]
+      ?? (legacyPortraitState ? measure?.labPanOffsetX : undefined);
+    const savedPanOffsetY = measure?.[`${statePrefix}PanOffsetY`]
+      ?? (legacyPortraitState ? measure?.labPanOffsetY : undefined);
+    this.labPanX = Math.round(centeredPanX + (Number.isFinite(savedPanOffsetX) ? savedPanOffsetX : 0) * w);
+    this.labPanY = Math.round(centeredPanY + (Number.isFinite(savedPanOffsetY) ? savedPanOffsetY : 0) * h);
 
     this.updateLabTransform();
   }
@@ -1656,9 +1666,10 @@ class GuitarTrainer {
   async resetLabZoom() {
     const measure = this.currentScore?.measures?.[this.labCurrentIndex];
     if (measure) {
-      measure.labZoomFactor = 1;
-      measure.labPanOffsetX = 0;
-      measure.labPanOffsetY = 0;
+      const statePrefix = this.getLabViewStatePrefix();
+      measure[`${statePrefix}ZoomFactor`] = 1;
+      measure[`${statePrefix}PanOffsetX`] = 0;
+      measure[`${statePrefix}PanOffsetY`] = 0;
     }
     this.fitLabCanvas();
 
@@ -2019,11 +2030,12 @@ class GuitarTrainer {
         if (labViewChanged) {
           const measure = this.currentScore?.measures?.[this.labCurrentIndex];
           if (measure) {
-            measure.labZoomFactor = this.labZoomScale / (this.labFitZoomScale || this.labZoomScale);
+            const statePrefix = this.getLabViewStatePrefix();
+            measure[`${statePrefix}ZoomFactor`] = this.labZoomScale / (this.labFitZoomScale || this.labZoomScale);
             const centeredPanX = (this.labLensWidth - this.labCanvas.width * this.labZoomScale) / 2;
             const centeredPanY = (this.labLensHeight - this.labCanvas.height * this.labZoomScale) / 2;
-            measure.labPanOffsetX = (this.labPanX - centeredPanX) / (this.labLensWidth || 1);
-            measure.labPanOffsetY = (this.labPanY - centeredPanY) / (this.labLensHeight || 1);
+            measure[`${statePrefix}PanOffsetX`] = (this.labPanX - centeredPanX) / (this.labLensWidth || 1);
+            measure[`${statePrefix}PanOffsetY`] = (this.labPanY - centeredPanY) / (this.labLensHeight || 1);
             try {
               await this.persistCurrentScore();
             } catch (err) {
