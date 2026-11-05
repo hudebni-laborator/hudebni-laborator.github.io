@@ -159,6 +159,8 @@ class GuitarTrainer {
     this.labFitZoomScale = 1.0;
     this.labPanX = 0;
     this.labPanY = 0;
+    this.labLensWidth = 0;
+    this.labLensHeight = 0;
     this.labLayoutMeta = null;
 
     this.librarySort = 'recent';
@@ -1630,6 +1632,8 @@ class GuitarTrainer {
 
     if (w <= 0 || h <= 0) return;
 
+    this.labLensWidth = w;
+    this.labLensHeight = h;
     const scaleX = w / this.labCanvas.width;
     const scaleY = h / this.labCanvas.height;
 
@@ -1639,15 +1643,23 @@ class GuitarTrainer {
       ? measure.labZoomFactor
       : 1;
     this.labZoomScale = Math.max(0.2, Math.min(5.0, this.labFitZoomScale * savedZoomFactor));
-    this.labPanX = Math.round((w - this.labCanvas.width * this.labZoomScale) / 2);
-    this.labPanY = Math.round((h - this.labCanvas.height * this.labZoomScale) / 2);
+    const centeredPanX = (w - this.labCanvas.width * this.labZoomScale) / 2;
+    const centeredPanY = (h - this.labCanvas.height * this.labZoomScale) / 2;
+    const savedPanOffsetX = Number.isFinite(measure?.labPanOffsetX) ? measure.labPanOffsetX : 0;
+    const savedPanOffsetY = Number.isFinite(measure?.labPanOffsetY) ? measure.labPanOffsetY : 0;
+    this.labPanX = Math.round(centeredPanX + savedPanOffsetX * w);
+    this.labPanY = Math.round(centeredPanY + savedPanOffsetY * h);
 
     this.updateLabTransform();
   }
 
   async resetLabZoom() {
     const measure = this.currentScore?.measures?.[this.labCurrentIndex];
-    if (measure) measure.labZoomFactor = 1;
+    if (measure) {
+      measure.labZoomFactor = 1;
+      measure.labPanOffsetX = 0;
+      measure.labPanOffsetY = 0;
+    }
     this.fitLabCanvas();
 
     try {
@@ -1669,7 +1681,7 @@ class GuitarTrainer {
     let ongoingTouches = new Map();
     let initialPinchDist = null;
     let initialPinchScale = 1.0;
-    let labZoomChanged = false;
+    let labViewChanged = false;
     let isLabPanning = false;
 
     // Dotyková gesta a přepínání taktů
@@ -1787,6 +1799,7 @@ class GuitarTrainer {
       }
 
       if (ongoingTouches.size === 1) {
+        labViewChanged = false;
         touchStartTime = Date.now();
         touchStartPos = { x: e.clientX, y: e.clientY };
         lens.setPointerCapture(e.pointerId);
@@ -1898,7 +1911,6 @@ class GuitarTrainer {
         if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         gestureMode = null;
         isLabPanning = false;
-        labZoomChanged = false;
         const t = Array.from(ongoingTouches.values());
         initialPinchDist = Math.hypot(t[0].x - t[1].x, t[0].y - t[1].y);
         initialPinchScale = this.labZoomScale;
@@ -1974,15 +1986,16 @@ class GuitarTrainer {
           this.labPanX = cx - (cx - this.labPanX) * f;
           this.labPanY = cy - (cy - this.labPanY) * f;
           this.labZoomScale = newScale;
-          labZoomChanged = true;
         }
         this.labPanX += dx / 2;
         this.labPanY += dy / 2;
         this.updateLabTransform();
+        labViewChanged = true;
       } else if (ongoingTouches.size === 1 && isLabPanning) {
         this.labPanX += dx;
         this.labPanY += dy;
         this.updateLabTransform();
+        labViewChanged = true;
       }
     });
 
@@ -2021,17 +2034,21 @@ class GuitarTrainer {
         }
       }
 
-      if (labZoomChanged) {
+      if (labViewChanged) {
         const measure = this.currentScore?.measures?.[this.labCurrentIndex];
         if (measure) {
           measure.labZoomFactor = this.labZoomScale / (this.labFitZoomScale || this.labZoomScale);
+          const centeredPanX = (this.labLensWidth - this.labCanvas.width * this.labZoomScale) / 2;
+          const centeredPanY = (this.labLensHeight - this.labCanvas.height * this.labZoomScale) / 2;
+          measure.labPanOffsetX = (this.labPanX - centeredPanX) / (this.labLensWidth || 1);
+          measure.labPanOffsetY = (this.labPanY - centeredPanY) / (this.labLensHeight || 1);
           try {
             await this.persistCurrentScore();
           } catch (err) {
             alert('Chyba při ukládání přiblížení: ' + err.message);
           }
         }
-        labZoomChanged = false;
+        labViewChanged = false;
       }
 
       ongoingTouches.clear();
