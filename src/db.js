@@ -1,7 +1,7 @@
 class ScoreDB {
   constructor() {
     this.dbName = 'GuitarTrainerDB';
-    this.version = 4;
+    this.version = 5;
     this.db = null;
   }
 
@@ -15,6 +15,9 @@ class ScoreDB {
         const db = e.target.result;
         if (!db.objectStoreNames.contains('scores')) {
           db.createObjectStore('scores', { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains('metronomeAudio')) {
+          db.createObjectStore('metronomeAudio', { keyPath: 'id' });
         }
       };
 
@@ -73,6 +76,34 @@ class ScoreDB {
       const store = tx.objectStore('scores');
       const req = store.delete(id);
 
+      req.onsuccess = () => resolve(true);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async saveMetronomeAudio(id, blob) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('metronomeAudio', 'readwrite');
+      const req = tx.objectStore('metronomeAudio').put({ id, blob });
+      req.onsuccess = () => resolve(id);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async getAllMetronomeAudio() {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction('metronomeAudio', 'readonly').objectStore('metronomeAudio').getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  async deleteMetronomeAudio(id) {
+    const db = await this.open();
+    return new Promise((resolve, reject) => {
+      const req = db.transaction('metronomeAudio', 'readwrite').objectStore('metronomeAudio').delete(id);
       req.onsuccess = () => resolve(true);
       req.onerror = () => reject(req.error);
     });

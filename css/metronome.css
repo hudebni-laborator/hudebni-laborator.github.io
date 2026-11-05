@@ -473,6 +473,56 @@
   font-size: 1.1rem !important;
 }
 
+.spoken-count-card {
+  max-height: 90vh;
+}
+
+.spoken-count-help,
+.spoken-count-status {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.spoken-count-status {
+  color: #a7f3d0;
+  font-weight: 700;
+}
+
+.spoken-count-status.error {
+  color: #fca5a5;
+}
+
+.spoken-count-syllable-list {
+  display: grid;
+  gap: 6px;
+}
+
+.spoken-count-syllable-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.spoken-count-syllable-label {
+  flex: 1;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.spoken-count-syllable-row .pill-btn {
+  min-width: 40px;
+  padding: 5px 8px;
+}
+
+.spoken-count-syllable-row .pill-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ======================================================== */
 /* BAREVNÉ ODLIŠENÍ: START (AZUROVÁ) VS. CÍL (ZLATÁ)       */
 /* ======================================================== */
