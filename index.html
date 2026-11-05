@@ -464,7 +464,13 @@
         <button id="sheetAccentBtn" class="pill-btn active" onclick="window.app.metronome.toggleAccent()">🔔 Akcent ZAP</button>
       </div>
 
-      <!-- 5. VOLBA DOB (METRUM) -->
+      <!-- 5. HLASOVÉ POČÍTÁNÍ PŘÍPRAVNÉHO TAKTU -->
+      <div class="selector-row">
+        <span class="selector-label">Hlasové počítání:</span>
+        <button id="sheetSpokenCountBtn" class="pill-btn active" aria-pressed="true" onclick="window.app.metronome.toggleSpokenCount()">🗣 Počítání ZAP</button>
+      </div>
+
+      <!-- 6. VOLBA DOB (METRUM) -->
       <div class="selector-row">
         <span class="selector-label">Metrum (doby):</span>
         <div class="pill-group" id="beatsPillGroup">
@@ -476,7 +482,7 @@
         </div>
       </div>
 
-      <!-- 6. ZRYCHLENÍ PO TAKTECH (STEPPER) -->
+      <!-- 7. ZRYCHLENÍ PO TAKTECH (STEPPER) -->
       <div class="selector-row">
         <span class="selector-label">Zrychlit po:</span>
         <div class="stepper-wrap">
@@ -486,7 +492,7 @@
         </div>
       </div>
 
-      <!-- 7. ZRYCHLENÍ O (KROK) -->
+      <!-- 8. ZRYCHLENÍ O (KROK) -->
       <div class="selector-row">
         <span class="selector-label">Zrychlení o:</span>
         <div class="pill-group" id="stepPillGroup">

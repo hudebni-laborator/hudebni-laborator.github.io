@@ -1,3 +1,14 @@
+const LAB_LEADIN_ORDINAL_COUNTS = [
+  'první', 'druhá', 'třetí', 'čtvrtá', 'pátá', 'šestá', 'sedmá', 'osmá',
+  'devátá', 'desátá', 'jedenáctá', 'dvanáctá', 'třináctá', 'čtrnáctá',
+  'patnáctá', 'šestnáctá'
+];
+const LAB_LEADIN_QUICK_COUNTS = [
+  'raz', 'dva', 'tři', 'čtyř', 'pět', 'šest', 'sedm', 'osm',
+  'devět', 'deset', 'jedenáct', 'dvanáct', 'třináct', 'čtrnáct',
+  'patnáct', 'šestnáct'
+];
+
 class MetronomeController {
   constructor() {
     this.audioCtx = null;
@@ -9,6 +20,7 @@ class MetronomeController {
     // ==========================================================
     this.soundType = 'woodblock'; // 'woodblock', 'beep', 'click', 'rimshot'
     this.accentEnabled = true;
+    this.spokenCountEnabled = true;
 
     // ==========================================================
     // SAMOSTATNÉ PARAMETRY PRO REŽIM HRANÍ
@@ -47,6 +59,29 @@ class MetronomeController {
   async initAudio() {
     if (!this.audioCtx) this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (this.audioCtx.state === 'suspended') await this.audioCtx.resume();
+  }
+
+  cancelSpokenCount() {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+
+  speakLeadInBeat(beatIndex, bpm) {
+    if (!this.spokenCountEnabled || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+
+    const isQuickTempo = bpm >= 120;
+    const word = (isQuickTempo ? LAB_LEADIN_QUICK_COUNTS : LAB_LEADIN_ORDINAL_COUNTS)[beatIndex];
+    if (!word) return;
+
+    const utterance = new window.SpeechSynthesisUtterance(word);
+    utterance.lang = 'cs-CZ';
+    utterance.rate = isQuickTempo ? Math.min(2.6, bpm / 100) : 1;
+    utterance.volume = 0.8;
+    utterance.onerror = event => {
+      if (event.error !== 'canceled') {
+        console.error('Nepodařilo se hlasové počítání přípravného taktu:', event.error);
+      }
+    };
+    window.speechSynthesis.speak(utterance);
   }
 
   detectCurrentMode() {
@@ -176,6 +211,7 @@ class MetronomeController {
 
   async start() {
     await this.initAudio();
+    this.cancelSpokenCount();
     if (window.wakeLockManager) {
       try { await window.wakeLockManager.request(); } catch (_) {}
     }
@@ -218,6 +254,7 @@ class MetronomeController {
 
   stop() {
     this.isRunning = false;
+    this.cancelSpokenCount();
     if (this.timerId) clearInterval(this.timerId);
     this.timerId = null;
     this.phase = 'idle';
@@ -371,6 +408,7 @@ class MetronomeController {
   }
 
   resetLabDrill() {
+    this.cancelSpokenCount();
     this.currentBpm = this.labStartBpm;
     this.measureIndexInCycle = 0;
     this.beatIndex = 0;
@@ -545,6 +583,12 @@ class MetronomeController {
     this.playClickSound(this.audioCtx.currentTime + 0.05, this.accentEnabled, false);
   }
 
+  toggleSpokenCount() {
+    this.spokenCountEnabled = !this.spokenCountEnabled;
+    if (!this.spokenCountEnabled) this.cancelSpokenCount();
+    this.updateSheetSelectors();
+  }
+
   updateLabSummaryUI() {
     const startTxt = `Start: ${this.labStartBpm}`;
     const targetTxt = `🎯 Cíl: ${this.labTargetBpm}`;
@@ -596,6 +640,12 @@ class MetronomeController {
       accBtn.innerText = this.accentEnabled ? '🔔 Akcent ZAP' : '🔕 Bez akcentu';
       accBtn.classList.toggle('active', this.accentEnabled);
     }
+    const spokenCountBtn = document.getElementById('sheetSpokenCountBtn');
+    if (spokenCountBtn) {
+      spokenCountBtn.innerText = this.spokenCountEnabled ? '🗣 Počítání ZAP' : '🔇 Počítání VYP';
+      spokenCountBtn.classList.toggle('active', this.spokenCountEnabled);
+      spokenCountBtn.setAttribute('aria-pressed', String(this.spokenCountEnabled));
+    }
   }
 
   // ==========================================================
@@ -625,6 +675,11 @@ class MetronomeController {
 
       if (this.activeMode === 'lab') {
         this.renderBeatLight(scheduledBeat, beatsPerBar, scheduledPhase);
+        if (scheduledPhase === 'leadin') {
+          this.speakLeadInBeat(scheduledBeat, scheduledBpm);
+        } else if (scheduledPhase === 'playing' && scheduledBeat === 0) {
+          this.cancelSpokenCount();
+        }
         if (scheduledBeat === 0) {
           this.updateCircleUI(scheduledPhase);
           this.updateLabTempoUI(scheduledBpm);
@@ -780,7 +835,7 @@ class MetronomeController {
     for (let i = 0; i < lights.length; i++) {
       lights[i].className = 'beat-light';
       if (i === beatIdx) {
-        lights[i].classList.add((beatIdx === 0 || phase === 'leadin') ? 'active-accent' : 'active-regular');
+        lights[i].classList.add(phase === 'leadin' ? 'active-accent' : 'active-regular');
       }
     }
   }
