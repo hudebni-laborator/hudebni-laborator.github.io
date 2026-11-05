@@ -156,6 +156,7 @@ class GuitarTrainer {
     this.editingId = null;
 
     this.labZoomScale = 1.0;
+    this.labFitZoomScale = 1.0;
     this.labPanX = 0;
     this.labPanY = 0;
     this.labLayoutMeta = null;
@@ -1632,11 +1633,28 @@ class GuitarTrainer {
     const scaleX = w / this.labCanvas.width;
     const scaleY = h / this.labCanvas.height;
 
-    this.labZoomScale = Math.min(scaleX, scaleY);
+    this.labFitZoomScale = Math.min(scaleX, scaleY);
+    const measure = this.currentScore?.measures?.[this.labCurrentIndex];
+    const savedZoomFactor = Number.isFinite(measure?.labZoomFactor) && measure.labZoomFactor > 0
+      ? measure.labZoomFactor
+      : 1;
+    this.labZoomScale = Math.max(0.2, Math.min(5.0, this.labFitZoomScale * savedZoomFactor));
     this.labPanX = Math.round((w - this.labCanvas.width * this.labZoomScale) / 2);
     this.labPanY = Math.round((h - this.labCanvas.height * this.labZoomScale) / 2);
 
     this.updateLabTransform();
+  }
+
+  async resetLabZoom() {
+    const measure = this.currentScore?.measures?.[this.labCurrentIndex];
+    if (measure) measure.labZoomFactor = 1;
+    this.fitLabCanvas();
+
+    try {
+      await this.persistCurrentScore();
+    } catch (err) {
+      alert('Chyba při ukládání přiblížení: ' + err.message);
+    }
   }
 
   initLabTouchEngine() {
@@ -1651,6 +1669,7 @@ class GuitarTrainer {
     let ongoingTouches = new Map();
     let initialPinchDist = null;
     let initialPinchScale = 1.0;
+    let labZoomChanged = false;
     let isLabPanning = false;
 
     // Dotyková gesta a přepínání taktů
@@ -1879,6 +1898,7 @@ class GuitarTrainer {
         if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         gestureMode = null;
         isLabPanning = false;
+        labZoomChanged = false;
         const t = Array.from(ongoingTouches.values());
         initialPinchDist = Math.hypot(t[0].x - t[1].x, t[0].y - t[1].y);
         initialPinchScale = this.labZoomScale;
@@ -1954,6 +1974,7 @@ class GuitarTrainer {
           this.labPanX = cx - (cx - this.labPanX) * f;
           this.labPanY = cy - (cy - this.labPanY) * f;
           this.labZoomScale = newScale;
+          labZoomChanged = true;
         }
         this.labPanX += dx / 2;
         this.labPanY += dy / 2;
@@ -1998,6 +2019,19 @@ class GuitarTrainer {
             if (navigator.vibrate) navigator.vibrate(15);
           }
         }
+      }
+
+      if (labZoomChanged) {
+        const measure = this.currentScore?.measures?.[this.labCurrentIndex];
+        if (measure) {
+          measure.labZoomFactor = this.labZoomScale / (this.labFitZoomScale || this.labZoomScale);
+          try {
+            await this.persistCurrentScore();
+          } catch (err) {
+            alert('Chyba při ukládání přiblížení: ' + err.message);
+          }
+        }
+        labZoomChanged = false;
       }
 
       ongoingTouches.clear();
