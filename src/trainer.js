@@ -508,7 +508,7 @@ class GuitarTrainer {
     }
   }
 
-  eraseAt(cx, cy, targetPage = null) {
+  eraseAt(cx, cy, targetPage = null, shouldRender = true) {
     if (!this.currentScore) return false;
     const pageNum = targetPage || this.currentPage;
     const key = `page_${pageNum}`;
@@ -542,7 +542,7 @@ class GuitarTrainer {
 
     if (modified) {
       this.currentScore.drawings[key] = newStrokes;
-      this.renderScoreView();
+      if (shouldRender) this.renderScoreView();
     }
     return modified;
   }
@@ -1700,6 +1700,14 @@ class GuitarTrainer {
     let touchStartPos = { x: 0, y: 0 };
     let touchHadMultiplePointers = false;
     let longPressTimer = null;
+    let aimPointerId = null;
+    let aimPosition = null;
+    let triggerPointerId = null;
+    let directDrawPointerId = null;
+    let activeLabStrokes = [];
+    let activeLabStroke = null;
+    let activeLabTool = null;
+    let labEraseModified = false;
     let gestureMode = null; // null | 'rotate-portrait' | 'nudge-landscape'
     let gestureStartX = 0;
     let gestureStartY = 0;
@@ -1709,6 +1717,97 @@ class GuitarTrainer {
     let nudgeRafId = null;
 
     const RETICLE_OFFSET_Y = 48;
+
+    const updateAimPosition = (clientX, clientY) => {
+      aimPosition = { x: clientX, y: clientY - RETICLE_OFFSET_Y };
+      const hit = this.labCanvasToPageCoords(aimPosition.x, aimPosition.y);
+      if (reticle) {
+        reticle.style.left = clientX + 'px';
+        reticle.style.top = aimPosition.y + 'px';
+        reticle.style.display = 'block';
+        reticle.classList.toggle('out-of-bounds', !hit);
+      }
+      return hit;
+    };
+
+    const finishLabStrokeSegment = (includeDot = false) => {
+      if (activeLabStroke?.stroke.points.length > (includeDot ? 0 : 1)) activeLabStrokes.push(activeLabStroke);
+      activeLabStroke = null;
+    };
+
+    const addLabPoint = (hit) => {
+      if (!hit) {
+        finishLabStrokeSegment();
+        return;
+      }
+      if (!this.currentScore) return;
+      if (activeLabTool === 'eraser') {
+        labEraseModified = this.eraseAt(hit.x, hit.y, hit.page, false) || labEraseModified;
+        return;
+      }
+
+      if (!activeLabStroke || activeLabStroke.page !== hit.page || activeLabStroke.measure !== hit.measure) {
+        finishLabStrokeSegment();
+        const color = activeLabTool === 'whiteout'
+          ? (this.samplePaperColorFromImage(this.pageCache.get(hit.page), hit.measure.box) || '#f4f2ec')
+          : this.penColor;
+        const width = activeLabTool === 'whiteout' ? Math.max(16, this.penWidth * 4.5) : this.penWidth;
+        activeLabStroke = {
+          page: hit.page,
+          measure: hit.measure,
+          stroke: { color, width, points: [{ x: hit.x, y: hit.y }] }
+        };
+        this.renderLiveLabStroke(activeLabStroke.stroke, hit.measure);
+        return;
+      }
+
+      const points = activeLabStroke.stroke.points;
+      const last = points[points.length - 1];
+      if (Math.hypot(hit.x - last.x, hit.y - last.y) < 1.5) return;
+      points.push({ x: hit.x, y: hit.y });
+      this.renderLiveLabStroke(activeLabStroke.stroke, hit.measure);
+    };
+
+    const beginLabStroke = () => {
+      if (!aimPosition || this.labTool === 'pan' || !this.currentScore) return;
+      activeLabStrokes = [];
+      activeLabStroke = null;
+      activeLabTool = this.labTool;
+      labEraseModified = false;
+      reticle?.classList.add('is-firing');
+      triggerBtn?.classList.add('active-firing');
+      addLabPoint(this.labCanvasToPageCoords(aimPosition.x, aimPosition.y));
+    };
+
+    const finishLabStroke = async () => {
+      if (activeLabTool === null) return;
+      finishLabStrokeSegment(activeLabStrokes.length === 0);
+      reticle?.classList.remove('is-firing');
+      triggerBtn?.classList.remove('active-firing');
+
+      if (activeLabStrokes.length && this.currentScore) {
+        if (!this.currentScore.drawings) this.currentScore.drawings = {};
+        activeLabStrokes.forEach(({ page, stroke }) => {
+          const key = `page_${page}`;
+          if (!this.currentScore.drawings[key]) this.currentScore.drawings[key] = [];
+          this.currentScore.drawings[key].push(stroke);
+        });
+      }
+
+      if (activeLabStrokes.length || labEraseModified) {
+        try {
+          await this.persistCurrentScore();
+        } catch (err) {
+          alert('Chyba při ukládání kresby: ' + err.message);
+        }
+        await this.showMeasureInLab(this.labCurrentIndex, false);
+      }
+
+      activeLabStrokes = [];
+      activeLabStroke = null;
+      activeLabTool = null;
+      labEraseModified = false;
+    };
 
     // Rychlé vykreslení pro 60 FPS
     const fastNudgeRender = () => {
@@ -1799,14 +1898,16 @@ class GuitarTrainer {
 
       // Pokud kreslíme perem/bělítkem
       if (this.labTool !== 'pan') {
-        const hit = this.labCanvasToPageCoords(e.clientX, e.clientY - RETICLE_OFFSET_Y);
-        if (reticle) {
-          reticle.style.left = e.clientX + 'px';
-          reticle.style.top = (e.clientY - RETICLE_OFFSET_Y) + 'px';
-          reticle.style.display = 'block';
-          reticle.classList.toggle('out-of-bounds', !hit);
-        }
+        aimPointerId = e.pointerId;
+        const hit = updateAimPosition(e.clientX, e.clientY);
         lens.setPointerCapture(e.pointerId);
+        if (e.pointerType !== 'touch') {
+          directDrawPointerId = e.pointerId;
+          beginLabStroke();
+        } else if (triggerPointerId !== null) {
+          if (activeLabTool === null) beginLabStroke();
+          else addLabPoint(hit);
+        }
         return;
       }
 
@@ -1946,7 +2047,13 @@ class GuitarTrainer {
         }
       }
 
-      if (this.labTool !== 'pan') return;
+      if (this.labTool !== 'pan') {
+        if (e.pointerId === aimPointerId) {
+          const hit = updateAimPosition(e.clientX, e.clientY);
+          if (directDrawPointerId === e.pointerId || triggerPointerId !== null) addLabPoint(hit);
+        }
+        return;
+      }
 
       // 1. Posun prstu při rotaci v Portraitu
       if (gestureMode === 'rotate-portrait') {
@@ -2014,6 +2121,19 @@ class GuitarTrainer {
     });
 
     const finishPointer = async (e) => {
+      if (e.pointerId === aimPointerId) {
+        aimPointerId = null;
+        aimPosition = null;
+        if (reticle) reticle.style.display = 'none';
+        if (triggerPointerId !== null) {
+          triggerPointerId = null;
+          await finishLabStroke();
+        }
+      }
+      if (e.pointerId === directDrawPointerId) {
+        directDrawPointerId = null;
+        await finishLabStroke();
+      }
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
 
       // Uložení stavu po gestu
@@ -2072,6 +2192,24 @@ class GuitarTrainer {
 
     lens.addEventListener('pointerup', finishPointer);
     lens.addEventListener('pointercancel', finishPointer);
+
+    if (triggerBtn) {
+      triggerBtn.addEventListener('pointerdown', e => {
+        if (this.labTool === 'pan' || triggerPointerId !== null || !aimPosition) return;
+        e.preventDefault();
+        triggerPointerId = e.pointerId;
+        triggerBtn.setPointerCapture(e.pointerId);
+        beginLabStroke();
+      });
+
+      const finishTrigger = async e => {
+        if (e.pointerId !== triggerPointerId) return;
+        triggerPointerId = null;
+        await finishLabStroke();
+      };
+      triggerBtn.addEventListener('pointerup', finishTrigger);
+      triggerBtn.addEventListener('pointercancel', finishTrigger);
+    }
   }
 
   labCanvasToPageCoords(clientX, clientY) {
@@ -2084,24 +2222,26 @@ class GuitarTrainer {
 
     const meta = this.labLayoutMeta;
     const ratio = meta.ratio || 1.0;
+    const isM2 = !!meta.m2 && canvasX >= meta.x2;
+    const measure = isM2 ? meta.m2 : meta.m1;
+    const index = isM2 ? 2 : 1;
+    const originX = isM2 ? meta.x2 : 0;
+    const originY = isM2 ? meta.originY2 : meta.originY1;
+    const pivotX = meta[`pivotX${index}`] ?? originX;
+    const pivotY = meta[`pivotY${index}`] ?? originY;
+    const angle = -(measure.manualRotate || 0) * Math.PI / 180;
+    const dx = canvasX - pivotX;
+    const dy = canvasY - pivotY;
+    const localX = (pivotX + dx * Math.cos(angle) - dy * Math.sin(angle) - originX) / ratio;
+    const localY = (pivotY + dx * Math.sin(angle) + dy * Math.cos(angle) - originY) / ratio;
+    if (localX < 0 || localY < 0 || localX > measure.box.width || localY > measure.box.height) return null;
 
-    if (meta.m2 && canvasX >= meta.x2) {
-      const localX = (canvasX - meta.x2) / ratio;
-      const localY = (canvasY - meta.originY2) / ratio;
-      return {
-        x: Math.round(meta.m2.box.left + localX),
-        y: Math.round(meta.m2.box.top + localY),
-        page: meta.m2.page || 1
-      };
-    } else {
-      const localX = canvasX / ratio;
-      const localY = (canvasY - meta.originY1) / ratio;
-      return {
-        x: Math.round(meta.m1.box.left + localX),
-        y: Math.round(meta.m1.box.top + localY),
-        page: meta.m1.page || 1
-      };
-    }
+    return {
+      x: Math.round(measure.box.left + localX),
+      y: Math.round(measure.box.top + localY),
+      page: measure.page || 1,
+      measure
+    };
   }
 
   updateLabBadge() {
@@ -2399,13 +2539,26 @@ class GuitarTrainer {
    */
   renderLiveLabStroke(stroke, targetPage) {
     if (!this.labCtx || !this.labLayoutMeta) return;
-    const isM1 = targetPage === (this.labLayoutMeta.m1.page || 1);
-    const ox = isM1 ? 0 : this.labLayoutMeta.x2;
-    const oy = isM1 ? this.labLayoutMeta.originY1 : this.labLayoutMeta.originY2;
+    const meta = this.labLayoutMeta;
+    const measure = targetPage?.box ? targetPage : (
+      (meta.m1.page || 1) === targetPage ? meta.m1 : meta.m2
+    );
+    if (!measure) return;
+    const isM1 = measure === meta.m1;
+    const ox = isM1 ? 0 : meta.x2;
+    const oy = isM1 ? meta.originY1 : meta.originY2;
     const ratio = this.labLayoutMeta.ratio || 1.0;
-    const curBox = isM1 ? this.labLayoutMeta.m1.box : this.labLayoutMeta.m2.box;
+    const index = isM1 ? 1 : 2;
+    const pivotX = meta[`pivotX${index}`] ?? ox;
+    const pivotY = meta[`pivotY${index}`] ?? oy;
 
-    this.drawSmoothStroke(this.labCtx, stroke, ratio, ox, oy, curBox);
+    this.labCtx.save();
+    this.labCtx.translate(pivotX, pivotY);
+    if (measure.manualRotate) {
+      this.labCtx.rotate((measure.manualRotate * Math.PI) / 180);
+    }
+    this.drawSmoothStroke(this.labCtx, stroke, ratio, ox - pivotX, oy - pivotY, measure.box);
+    this.labCtx.restore();
   }
 
   renderDrawingsForMeasure(ctx, m, ox, oy, scale = 1.0) {
@@ -2535,7 +2688,10 @@ class GuitarTrainer {
 
         this.labCanvas.width = cropW;
         this.labCanvas.height = cropH;
-        this.labLayoutMeta = { m1: curM, m2: null, originY1: 0, originY2: 0, x2: 0, scale2: 1.0, ratio };
+        this.labLayoutMeta = {
+          m1: curM, m2: null, originY1: 0, originY2: 0, x2: 0, scale2: 1.0, ratio,
+          pivotX1: cropW / 2, pivotY1: cropH / 2
+        };
 
         this.labCtx.fillStyle = paperColor;
         this.labCtx.fillRect(0, 0, cropW, cropH);
@@ -2566,6 +2722,8 @@ class GuitarTrainer {
         this.labLayoutMeta = { m1: curM, m2: null, originY1: 0, originY2: 0, x2: 0, scale2: 1.0, ratio: 1.0 };
         this.labCanvas.width = curM.box.width;
         this.labCanvas.height = curM.box.height;
+        this.labLayoutMeta.pivotX1 = this.labCanvas.width / 2;
+        this.labLayoutMeta.pivotY1 = this.labCanvas.height / 2;
 
         this.labCtx.fillStyle = paperColor;
         this.labCtx.fillRect(0, 0, this.labCanvas.width, this.labCanvas.height);
@@ -2677,7 +2835,11 @@ class GuitarTrainer {
           originY2: posY2,
           x2: splitX_px,
           scale2: 1.0,
-          ratio
+          ratio,
+          pivotX1: 0,
+          pivotY1: posY1 + Math.round(staffCenter1 * ratio),
+          pivotX2: splitX_px,
+          pivotY2: posY2 + Math.round(staffCenter2 * ratio)
         };
 
         this.labCtx.fillStyle = paperColor;
@@ -2714,7 +2876,11 @@ class GuitarTrainer {
           originY2,
           x2: originX2,
           scale2: 1.0,
-          ratio: 1.0
+          ratio: 1.0,
+          pivotX1: 0,
+          pivotY1: originY1 + staffCenter1,
+          pivotX2: originX2,
+          pivotY2: originY2 + staffCenter2
         };
 
         this.labCanvas.width = totalW;
