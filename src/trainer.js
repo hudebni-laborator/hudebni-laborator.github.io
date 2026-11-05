@@ -1687,6 +1687,7 @@ class GuitarTrainer {
     // Dotyková gesta a přepínání taktů
     let touchStartTime = 0;
     let touchStartPos = { x: 0, y: 0 };
+    let touchHadMultiplePointers = false;
     let longPressTimer = null;
     let gestureMode = null; // null | 'rotate-portrait' | 'nudge-landscape'
     let gestureStartX = 0;
@@ -1800,6 +1801,7 @@ class GuitarTrainer {
 
       if (ongoingTouches.size === 1) {
         labViewChanged = false;
+        touchHadMultiplePointers = false;
         touchStartTime = Date.now();
         touchStartPos = { x: e.clientX, y: e.clientY };
         lens.setPointerCapture(e.pointerId);
@@ -1908,6 +1910,7 @@ class GuitarTrainer {
 
         isLabPanning = true;
       } else if (ongoingTouches.size === 2) {
+        touchHadMultiplePointers = true;
         if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
         gestureMode = null;
         isLabPanning = false;
@@ -2013,11 +2016,28 @@ class GuitarTrainer {
         await this.persistCurrentScore();
         this.showMeasureInLab(this.labCurrentIndex, false);
       } else {
+        if (labViewChanged) {
+          const measure = this.currentScore?.measures?.[this.labCurrentIndex];
+          if (measure) {
+            measure.labZoomFactor = this.labZoomScale / (this.labFitZoomScale || this.labZoomScale);
+            const centeredPanX = (this.labLensWidth - this.labCanvas.width * this.labZoomScale) / 2;
+            const centeredPanY = (this.labLensHeight - this.labCanvas.height * this.labZoomScale) / 2;
+            measure.labPanOffsetX = (this.labPanX - centeredPanX) / (this.labLensWidth || 1);
+            measure.labPanOffsetY = (this.labPanY - centeredPanY) / (this.labLensHeight || 1);
+            try {
+              await this.persistCurrentScore();
+            } catch (err) {
+              alert('Chyba při ukládání přiblížení: ' + err.message);
+            }
+          }
+          labViewChanged = false;
+        }
+
         // Bod 2: DETEKCE KRÁTKÉHO KLEPNUTÍ PRO PŘEPÍNÁNÍ TAKTU VLEVO / VPRAVO
         const duration = Date.now() - touchStartTime;
         const dist = Math.hypot(e.clientX - touchStartPos.x, e.clientY - touchStartPos.y);
 
-        if (duration < 280 && dist < 10 && this.labTool === 'pan') {
+        if (!touchHadMultiplePointers && duration < 280 && dist < 10 && this.labTool === 'pan') {
           const rect = lens.getBoundingClientRect();
           const relativeX = e.clientX - rect.left;
 
@@ -2032,23 +2052,6 @@ class GuitarTrainer {
             if (navigator.vibrate) navigator.vibrate(15);
           }
         }
-      }
-
-      if (labViewChanged) {
-        const measure = this.currentScore?.measures?.[this.labCurrentIndex];
-        if (measure) {
-          measure.labZoomFactor = this.labZoomScale / (this.labFitZoomScale || this.labZoomScale);
-          const centeredPanX = (this.labLensWidth - this.labCanvas.width * this.labZoomScale) / 2;
-          const centeredPanY = (this.labLensHeight - this.labCanvas.height * this.labZoomScale) / 2;
-          measure.labPanOffsetX = (this.labPanX - centeredPanX) / (this.labLensWidth || 1);
-          measure.labPanOffsetY = (this.labPanY - centeredPanY) / (this.labLensHeight || 1);
-          try {
-            await this.persistCurrentScore();
-          } catch (err) {
-            alert('Chyba při ukládání přiblížení: ' + err.message);
-          }
-        }
-        labViewChanged = false;
       }
 
       ongoingTouches.clear();
