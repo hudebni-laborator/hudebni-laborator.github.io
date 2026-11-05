@@ -10,16 +10,6 @@ const LAB_LEADIN_QUICK_COUNTS = [
   ['de', 'vět'], ['de', 'set'], ['je', 'den', 'náct'], ['dva', 'náct'],
   ['tři', 'náct'], ['čtr', 'náct'], ['pat', 'náct'], ['šest', 'náct']
 ];
-const LAB_LEADIN_ORDINAL_WORDS = [
-  'první', 'druhá', 'třetí', 'čtvrtá', 'pátá', 'šestá', 'sedmá', 'osmá',
-  'devátá', 'desátá', 'jedenáctá', 'dvanáctá', 'třináctá', 'čtrnáctá',
-  'patnáctá', 'šestnáctá'
-];
-const LAB_LEADIN_QUICK_WORDS = [
-  'raz', 'dva', 'tři', 'čtyř', 'pět', 'šest', 'sedm', 'osm',
-  'devět', 'deset', 'jedenáct', 'dvanáct', 'třináct', 'čtrnáct',
-  'patnáct', 'šestnáct'
-];
 const LAB_LEADIN_SAMPLE_KEYS = [...new Set([
   ...LAB_LEADIN_ORDINAL_COUNTS.flat(),
   ...LAB_LEADIN_QUICK_COUNTS.flat()
@@ -38,6 +28,7 @@ class MetronomeController {
     this.accentEnabled = true;
     this.spokenCountEnabled = true;
     this.leadInBuffers = new Map();
+    this.stretchedLeadInBuffers = new Map();
     this.leadInSources = new Set();
     this.leadInRecorder = null;
     this.leadInRecordingKey = null;
@@ -83,7 +74,6 @@ class MetronomeController {
   }
 
   cancelSpokenCount() {
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
     for (const source of this.leadInSources) {
       try { source.stop(); } catch (_) {}
     }
@@ -98,6 +88,7 @@ class MetronomeController {
   async loadLeadInBuffers() {
     const recordings = await window.scoreDB.getAllMetronomeAudio();
     this.leadInBuffers.clear();
+    this.stretchedLeadInBuffers.clear();
     for (const { id, blob } of recordings) {
       try {
         const decoded = await this.audioCtx.decodeAudioData(await blob.arrayBuffer());
@@ -135,48 +126,117 @@ class MetronomeController {
     return { buffer: trimmed, onsetOffset: (firstSound - start) / buffer.sampleRate };
   }
 
+  stretchLeadInBuffer(sample, duration) {
+    // Overlap and align short grains to change duration without resampling the speaker's pitch.
+    const input = sample.buffer;
+    const sampleRate = input.sampleRate;
+    const outputLength = Math.max(1, Math.round(duration * sampleRate));
+    const speed = input.duration / duration;
+    if (speed <= 1) return sample;
+
+    const windowSize = Math.max(2, Math.min(
+      Math.round(sampleRate * 0.04),
+      input.length,
+      outputLength
+    ));
+    const outputHop = Math.max(1, Math.floor(windowSize / 2));
+    const searchRadius = Math.min(Math.floor(outputHop / 2), Math.round(sampleRate * 0.004));
+    const sourceChannels = Array.from({ length: input.numberOfChannels }, (_, channel) => input.getChannelData(channel));
+    const outputChannels = sourceChannels.map(() => new Float32Array(outputLength));
+    const weights = new Float32Array(outputLength);
+    const window = Float32Array.from(
+      { length: windowSize },
+      (_, index) => 0.5 - 0.5 * Math.cos((2 * Math.PI * index) / (windowSize - 1))
+    );
+    const monoAt = (index, channels = sourceChannels) => {
+      let sum = 0;
+      for (const channel of channels) sum += channel[index] || 0;
+      return sum / channels.length;
+    };
+
+    for (let outputStart = 0; outputStart < outputLength; outputStart += outputHop) {
+      const expectedInputStart = Math.min(
+        input.length - windowSize,
+        Math.round(outputStart * speed)
+      );
+      let inputStart = Math.max(0, expectedInputStart);
+
+      if (outputStart > 0 && searchRadius > 0) {
+        const overlapLength = Math.min(outputHop, outputLength - outputStart);
+        let bestCorrelation = -Infinity;
+        const minCandidate = Math.max(0, expectedInputStart - searchRadius);
+        const maxCandidate = Math.min(input.length - windowSize, expectedInputStart + searchRadius);
+
+        for (let candidate = minCandidate; candidate <= maxCandidate; candidate++) {
+          let correlation = 0;
+          let sourceEnergy = 0;
+          let outputEnergy = 0;
+          for (let index = 0; index < overlapLength; index++) {
+            const outputIndex = outputStart + index;
+            const priorWeight = weights[outputIndex];
+            if (!priorWeight) continue;
+            const sourceValue = monoAt(candidate + index);
+            const outputValue = monoAt(outputIndex, outputChannels) / priorWeight;
+            correlation += sourceValue * outputValue;
+            sourceEnergy += sourceValue * sourceValue;
+            outputEnergy += outputValue * outputValue;
+          }
+          const normalizedCorrelation = correlation / Math.sqrt(sourceEnergy * outputEnergy || 1);
+          if (normalizedCorrelation > bestCorrelation) {
+            bestCorrelation = normalizedCorrelation;
+            inputStart = candidate;
+          }
+        }
+      }
+
+      const frameLength = Math.min(windowSize, outputLength - outputStart, input.length - inputStart);
+      for (let index = 0; index < frameLength; index++) {
+        const weight = window[index];
+        const outputIndex = outputStart + index;
+        weights[outputIndex] += weight;
+        for (let channel = 0; channel < sourceChannels.length; channel++) {
+          outputChannels[channel][outputIndex] += sourceChannels[channel][inputStart + index] * weight;
+        }
+      }
+    }
+
+    const stretched = this.audioCtx.createBuffer(input.numberOfChannels, outputLength, sampleRate);
+    for (let channel = 0; channel < outputChannels.length; channel++) {
+      for (let index = 0; index < outputLength; index++) {
+        if (weights[index]) outputChannels[channel][index] /= weights[index];
+      }
+      stretched.copyToChannel(outputChannels[channel], channel);
+    }
+
+    return { buffer: stretched, onsetOffset: sample.onsetOffset / speed };
+  }
+
   scheduleLeadInSyllables(beatIndex, bpm, time) {
     const syllables = this.getLeadInSyllables(beatIndex, bpm);
     if (!syllables.length || syllables.some(syllable => !this.leadInBuffers.has(syllable))) return false;
 
     const syllableInterval = (60 / bpm) / syllables.length;
     syllables.forEach((syllable, index) => {
-      const sample = this.leadInBuffers.get(syllable);
+      const originalSample = this.leadInBuffers.get(syllable);
+      const cacheKey = `${syllable}:${Math.round(syllableInterval * 1000)}`;
+      let sample = this.stretchedLeadInBuffers.get(cacheKey);
+      if (!sample) {
+        sample = this.stretchLeadInBuffer(originalSample, syllableInterval);
+        if (this.stretchedLeadInBuffers.size >= 256) this.stretchedLeadInBuffers.clear();
+        this.stretchedLeadInBuffers.set(cacheKey, sample);
+      }
       const buffer = sample.buffer;
       const source = this.audioCtx.createBufferSource();
       source.buffer = buffer;
-      const playbackRate = Math.max(1, buffer.duration / syllableInterval);
       source.connect(this.audioCtx.destination);
       source.onended = () => this.leadInSources.delete(source);
       this.leadInSources.add(source);
       const syllableTime = time + index * syllableInterval;
-      const startTime = syllableTime - sample.onsetOffset / playbackRate;
-      source.playbackRate.setValueAtTime(playbackRate, startTime);
+      const startTime = syllableTime - sample.onsetOffset;
       source.start(startTime);
       source.stop(syllableTime + syllableInterval);
     });
     return true;
-  }
-
-  speakLeadInBeat(beatIndex, bpm) {
-    if (!this.spokenCountEnabled || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
-
-    const isQuickTempo = bpm >= 120;
-    const syllables = this.getLeadInSyllables(beatIndex, bpm);
-    if (!syllables.length) return;
-
-    const word = (isQuickTempo ? LAB_LEADIN_QUICK_WORDS : LAB_LEADIN_ORDINAL_WORDS)[beatIndex];
-    if (!word) return;
-    const utterance = new window.SpeechSynthesisUtterance(word);
-    utterance.lang = 'cs-CZ';
-    utterance.rate = isQuickTempo ? Math.min(2.6, bpm / 100) : 1;
-    utterance.volume = 0.8;
-    utterance.onerror = event => {
-      if (event.error !== 'canceled') {
-        console.error('Nepodařilo se hlasové počítání přípravného taktu:', event.error);
-      }
-    };
-    window.speechSynthesis.speak(utterance);
   }
 
   async openLeadInRecorder() {
@@ -301,6 +361,7 @@ class MetronomeController {
           } else {
             this.leadInBuffers.delete(key);
           }
+          this.stretchedLeadInBuffers.clear();
           this.setLeadInRecordingStatus(`Slabika „${key}“ uložena do tohoto zařízení.`);
           await this.renderLeadInRecorder();
         } catch (error) {
@@ -352,6 +413,7 @@ class MetronomeController {
     try {
       await window.scoreDB.deleteMetronomeAudio(key);
       this.leadInBuffers.delete(key);
+      this.stretchedLeadInBuffers.clear();
       await this.renderLeadInRecorder();
     } catch (error) {
       console.error(`Smazání slabiky „${key}“ selhalo:`, error);
@@ -965,10 +1027,13 @@ class MetronomeController {
     const scheduledBpm = this.currentBpm;
 
     this.playClickSound(time, isAccent, scheduledPhase === 'leadin');
-    const hasScheduledCount = this.activeMode === 'lab'
+    if (
+      this.activeMode === 'lab'
       && scheduledPhase === 'leadin'
       && this.spokenCountEnabled
-      && this.scheduleLeadInSyllables(scheduledBeat, scheduledBpm, time);
+    ) {
+      this.scheduleLeadInSyllables(scheduledBeat, scheduledBpm, time);
+    }
 
     const delayMs = Math.max(0, (time - this.audioCtx.currentTime) * 1000);
     setTimeout(() => {
@@ -976,11 +1041,7 @@ class MetronomeController {
 
       if (this.activeMode === 'lab') {
         this.renderBeatLight(scheduledBeat, beatsPerBar, scheduledPhase);
-        if (scheduledPhase === 'leadin') {
-          if (!hasScheduledCount && this.spokenCountEnabled) {
-            this.speakLeadInBeat(scheduledBeat, scheduledBpm);
-          }
-        } else if (scheduledPhase === 'playing' && scheduledBeat === 0) {
+        if (scheduledPhase === 'playing' && scheduledBeat === 0) {
           this.cancelSpokenCount();
         }
         if (scheduledBeat === 0) {
